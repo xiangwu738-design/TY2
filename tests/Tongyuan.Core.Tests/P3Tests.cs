@@ -20,7 +20,7 @@ public class P3Tests
         // 节点0：战斗
         Assert.Equal(MapNodeType.Combat, rc.CurrentType);
         rc.WinCombat(Card("reward1"), goldReward: 20);
-        Assert.Equal(1, run.Deck.Count);
+        Assert.Single(run.Deck);
         Assert.Equal(220, run.Gold); // 初始 200 + 奖励 20
 
         Assert.True(rc.Advance());
