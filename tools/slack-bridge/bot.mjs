@@ -8,7 +8,8 @@
 // env：SLACK_BOT_TOKEN  SLACK_APP_TOKEN  PROJECT_DIR  MAX_TURNS(60)
 //      AUTO_CONTINUE(0/1)  AUTO_MAX(40)
 // =============================================================================
-import { App } from '@slack/bolt';
+import pkg from '@slack/bolt';
+const { App } = pkg;
 import { spawn } from 'node:child_process';
 
 const BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
@@ -24,7 +25,7 @@ if (!BOT_TOKEN || !APP_TOKEN) {
 	process.exit(1);
 }
 
-const app = new App({ token: BOT_TOKEN, appToken: APP_TOKEN });
+const app = new App({ token: BOT_TOKEN, appToken: APP_TOKEN, socketMode: true });
 const sessions = new Map();              // channel -> session_id
 const chanState = new Map();             // channel -> { busy, queue, stopRequested }
 let botUserId = '';
