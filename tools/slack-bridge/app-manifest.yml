@@ -1,0 +1,20 @@
+display_information:
+  name: 同渊开发
+features:
+  bot_user:
+    display_name: TY
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - app_mentions:read
+      - im:history
+      - channels:history
+      - groups:history
+      - mpim:history
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.im
+  socket_mode_enabled: true

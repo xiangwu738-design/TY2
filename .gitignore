@@ -1,0 +1,22 @@
+# Godot
+.godot/
+*.import
+
+# 构建产物
+/build/
+*.exe
+*.pck
+*.pdb
+
+# Slack 桥
+tools/slack-bridge/node_modules/
+.env
+
+# 临时/调试
+sshot.png
+*.log
+host.log
+
+# 系统
+.DS_Store
+Thumbs.db

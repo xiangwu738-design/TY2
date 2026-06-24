@@ -1,0 +1,13 @@
+{
+  "name": "tongyuan-slack-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Slack <-> Claude Code bridge: 在 Slack 里看输出、提新要求",
+  "scripts": {
+    "start": "node --env-file=.env bot.mjs"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.21.0"
+  }
+}
