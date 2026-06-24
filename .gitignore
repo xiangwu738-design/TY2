@@ -8,6 +8,12 @@
 *.pck
 *.pdb
 
+# .NET 构建产物
+**/bin/
+**/obj/
+*.csproj.user
+*.suo
+
 # Slack 桥
 tools/slack-bridge/node_modules/
 .env

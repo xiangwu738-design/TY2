@@ -1,0 +1,20 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>Tongyuan</RootNamespace>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="src/Tongyuan.Core/Tongyuan.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core 与 Tests 各有独立工程，从 Godot 工程编译项移除，避免重复编译/类型冲突 -->
+    <Compile Remove="src/Tongyuan.Core/**/*.cs" />
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+
+</Project>
