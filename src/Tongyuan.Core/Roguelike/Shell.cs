@@ -27,7 +27,7 @@ public interface IRelicRegistry
 {
     void Register(Relic relic);
     Relic? Get(string id);
-    IEnumerable<Relic> All();
+    IEnumerable<Relic> All { get; }
 }
 
 /// <summary>休息点（规格 §4.9/§4.6）。恢复血量上限，量用模板参数（默认回25%上限，§7）。</summary>

@@ -24,6 +24,6 @@ public sealed class MapNode
 public sealed class MapGraph
 {
     public List<MapNode> Nodes { get; } = new();
-    public int StartNodeId { get; init; }
-    public int BossNodeId { get; init; }
+    public int StartNodeId { get; set; }
+    public int BossNodeId { get; set; }
 }
