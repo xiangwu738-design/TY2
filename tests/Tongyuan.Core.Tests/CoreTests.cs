@@ -41,7 +41,7 @@ public class CoreTests
         Assert.Equal(1, gs.Pointer);                  // 占位推进 1
         Assert.NotNull(c1.PrepCard);                  // 整备牌仍在手
         Assert.Equal(2, c1.Hand.Count);               // 抽了 2
-        Assert.Equal(0, c1.DrawPile.Count);
+        Assert.Empty(c1.DrawPile);
         Assert.Contains(gs.Events, e => e is GameEvent.PrepUsed);
     }
 

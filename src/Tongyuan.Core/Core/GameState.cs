@@ -162,6 +162,7 @@ public sealed class GameState
         if (dmg > 0)
         {
             target.Hp -= dmg;
+            target.DamageTakenThisFight += dmg; // 累计本场受伤（结算下调上限用，§4.6）
             Events.Add(new GameEvent.DamageDealt(target.Id, TargetIsEnemy: false, dmg));
         }
         if (wasAlive && target.Hp <= 0)

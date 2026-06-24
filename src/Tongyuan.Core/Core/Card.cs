@@ -7,7 +7,7 @@ namespace Tongyuan.Core.Core;
 public sealed class Card
 {
     public CardDef Def { get; init; } = null!;
-    public Guid InstanceId { get; } = Guid.NewGuid();
+    public Guid InstanceId { get; set; } = Guid.NewGuid(); // 可继承：克隆/确定性重放需保持一致
     public List<Enchantment> Enchantments { get; } = new();
 
     public bool IsPrep => Def.Type == CardType.Prep;
@@ -24,7 +24,7 @@ public sealed class Card
 
     public Card Clone()
     {
-        var c = new Card { Def = Def };
+        var c = new Card { Def = Def, InstanceId = InstanceId };
         foreach (var e in Enchantments) c.Enchantments.Add(e.Clone());
         return c;
     }

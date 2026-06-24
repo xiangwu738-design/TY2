@@ -14,6 +14,7 @@ public sealed class Character
     public int MaxHp { get; set; }
     public int Position { get; set; } // 1..N，1=前线
     public bool IsDown { get; set; } // 被击倒：本场临时 debuff（弱而不废）
+    public int DamageTakenThisFight { get; set; } // 本场累计受伤（结算下调上限用）
 
     public Card PrepCard { get; init; } = null!;      // 固定整备牌，常驻手牌
     public List<Card> Hand { get; } = new();          // 抽到的牌（不含整备）
@@ -78,6 +79,7 @@ public sealed class Character
             MaxHp = MaxHp,
             Position = Position,
             IsDown = IsDown,
+            DamageTakenThisFight = DamageTakenThisFight,
             PrepCard = PrepCard?.Clone()!,
         };
         foreach (var x in Hand) c.Hand.Add(x.Clone());
