@@ -18,6 +18,15 @@ public sealed class Enchantment
     public EnchantmentType Type { get; init; }
     public int Magnitude { get; init; }
     public EnchantmentScope Scope { get; init; }
-    public Guid? TargetCardInstanceId { get; init; } // Scope=SpecificCard 时指定
+    public Guid? TargetCardInstanceId { get; set; } // Scope=SpecificCard 时指定
     public int Remaining { get; set; } // 易伤次数等
+
+    public Enchantment Clone() => new()
+    {
+        Type = Type,
+        Magnitude = Magnitude,
+        Scope = Scope,
+        TargetCardInstanceId = TargetCardInstanceId,
+        Remaining = Remaining,
+    };
 }

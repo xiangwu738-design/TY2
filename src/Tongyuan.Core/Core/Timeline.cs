@@ -7,21 +7,19 @@ namespace Tongyuan.Core.Core;
 public sealed class Timeline
 {
     public List<NodeType> Nodes { get; init; } = new();
-    public List<Enemy> Enemies { get; } = new(); // 节点上的敌人
+    public List<Enemy> Enemies { get; } = new();
     public int Pointer { get; set; }
 
     public int Length => Nodes.Count;
+    public bool AtEnd => Pointer >= Length - 1;
 
-    /// <summary>推进 n 格（占位消耗）。返回沿途触发的敌人节点。</summary>
-    public List<Enemy> Advance(int n)
+    public Enemy? EnemyAt(int slot) => Enemies.Find(e => e.NodeSlot == slot);
+
+    public Timeline Clone()
     {
-        var hit = new List<Enemy>();
-        for (int i = 0; i < n && Pointer < Length - 1; i++)
-        {
-            Pointer++;
-            var e = Enemies.Find(x => x.NodeSlot == Pointer);
-            if (e is not null) hit.Add(e);
-        }
-        return hit;
+        var t = new Timeline { Pointer = Pointer };
+        t.Nodes.AddRange(Nodes);
+        foreach (var e in Enemies) t.Enemies.Add(e.Clone());
+        return t;
     }
 }

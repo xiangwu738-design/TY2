@@ -7,17 +7,27 @@ public abstract record GameEvent
 {
     public sealed record PointerMoved(int From, int To) : GameEvent;
     public sealed record EnemyTriggered(int EnemyId, int TargetPosition, int Damage) : GameEvent;
-    public sealed record ShieldAbsorbed(int ShieldOwnerId, int Amount, bool Exhausted) : GameEvent;
+    public sealed record ShieldAbsorbed(int ProtectedCharacterId, int Amount, bool Exhausted) : GameEvent;
     public sealed record CardPlayed(int CharacterId, Guid CardInstanceId) : GameEvent;
-    public sealed record PrepReturned(int CharacterId) : GameEvent;
+    public sealed record PrepUsed(int CharacterId, int Drawn) : GameEvent;
     public sealed record CardsDrawn(int CharacterId, int Count) : GameEvent;
-    public sealed record DamageDealt(int TargetId, int Amount) : GameEvent;
+    public sealed record DamageDealt(int TargetId, bool TargetIsEnemy, int Amount) : GameEvent;
     public sealed record PositionChanged(int CharacterId, int From, int To) : GameEvent;
     public sealed record CharacterDowned(int CharacterId) : GameEvent;
     public sealed record CharacterDied(int CharacterId) : GameEvent;
-    public sealed record EnchantmentApplied(Enchantment Enchantment) : GameEvent;
+    public sealed record EnemyDied(int EnemyId) : GameEvent;
+    public sealed record EnchantmentApplied(Enchantment Enchantment, int? TargetCharacterId, int? TargetEnemyId) : GameEvent;
+    public sealed record ShieldPlaced(int GuardianId, int ProtectedId, ShieldType Type) : GameEvent;
     public sealed record TurnEnded() : GameEvent;
 }
 
-/// <summary>玩家动作（Net 同步单元，主机权威执行）。</summary>
-public sealed record PlayerAction(int CharacterId, ActionType Type, Guid? CardInstanceId = null, int? TargetId = null);
+/// <summary>
+/// 玩家动作（Net 同步单元，主机权威执行）。确定性：同 seed + 同 action 序列 → 同结果。
+/// </summary>
+public sealed record PlayerAction(
+    int CharacterId,
+    ActionType Type,
+    Guid? CardInstanceId = null,
+    int? TargetCharacterId = null,
+    int? TargetEnemyId = null,
+    Guid? TargetCardInstanceId = null);

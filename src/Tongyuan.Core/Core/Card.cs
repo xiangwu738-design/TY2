@@ -11,4 +11,21 @@ public sealed class Card
     public List<Enchantment> Enchantments { get; } = new();
 
     public bool IsPrep => Def.Type == CardType.Prep;
+
+    /// <summary>本牌当前攻击伤害（含力量附魔加成）。</summary>
+    public int EffectiveAttack => Def.Magnitude + EnchantMagOfType(EnchantmentType.Power);
+
+    private int EnchantMagOfType(EnchantmentType t)
+    {
+        int sum = 0;
+        foreach (var e in Enchantments) if (e.Type == t) sum += e.Magnitude;
+        return sum;
+    }
+
+    public Card Clone()
+    {
+        var c = new Card { Def = Def };
+        foreach (var e in Enchantments) c.Enchantments.Add(e.Clone());
+        return c;
+    }
 }
