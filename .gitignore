@@ -20,3 +20,6 @@ host.log
 # 系统
 .DS_Store
 Thumbs.db
+
+# Claude Code 本地配置
+.claude/

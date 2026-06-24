@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(\"/c/Users/ASUS/Desktop/Godot_v4.7-stable_win64.exe\" --headless --path \"D:/工程/NEO\" --quit-after 12)",
-      "WebSearch"
-    ]
-  }
-}
