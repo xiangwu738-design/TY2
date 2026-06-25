@@ -26,7 +26,7 @@ public partial class Main : Node
         GD.Print($"[同渊] 布局自检: 无重叠={layout.NoOverlaps()} 在视口内={layout.AllWithinViewport()}");
     }
 
-    private static GameState BuildSampleBattle()
+    public static GameState BuildSampleBattle()
     {
         var tl = new Timeline();
         for (int i = 0; i < 6; i++) tl.Nodes.Add(NodeType.Empty);
