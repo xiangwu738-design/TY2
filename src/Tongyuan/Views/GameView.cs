@@ -258,10 +258,11 @@ public partial class GameView : Control
             Disabled = !c.IsAlive,
         };
         p.AddThemeFontSizeOverride("font_size", 12);
+        bool aimed = IsAimed(c); // 文档 §二：1位/被瞄准位警示高亮
         var sb = new StyleBoxFlat
         {
             BgColor = ColorOf(c.Color).Darkened(isActive ? 0.45f : 0.72f),
-            BorderColor = isActive ? Colors.White : ColorOf(c.Color),
+            BorderColor = aimed ? UiPalette.WarnOrange : (isActive ? Colors.White : ColorOf(c.Color)),
         };
         sb.SetBorderWidthAll(3);
         sb.ContentMarginLeft = 5; sb.ContentMarginTop = 3; sb.ContentMarginRight = 5; sb.ContentMarginBottom = 3;
@@ -286,6 +287,22 @@ public partial class GameView : Control
         int id = c.Id;
         p.Pressed += () => { _activeId = id; Render(); };
         return p;
+    }
+
+    /// <summary>该角色是否被任一存活敌人的下一步攻击瞄准（含全体）。</summary>
+    private bool IsAimed(Character c)
+    {
+        if (State is null || !c.IsAlive) return false;
+        foreach (var e in State.Enemies)
+        {
+            if (!e.IsAlive) continue;
+            if (e.NextAction is EnemyAction.Attack a)
+            {
+                int tp = a.TargetPos ?? e.TargetPosition;
+                if (tp == -1 || tp == c.Position) return true;
+            }
+        }
+        return false;
     }
 
     private Control MakeEnemyBlock(Enemy e, bool clickable)
@@ -705,7 +722,34 @@ public partial class GameView : Control
         {
             foreach (var p in _charPortraits.Values) p.OnEvent(e);
             foreach (var p in _enemyPortraits.Values) p.OnEvent(e);
+            // 伤害数字上飘（文档 §七：受击 → 伤害数字上飘，扣血/护甲不同色）
+            if (e is GameEvent.DamageDealt dd)
+            {
+                var portrait = dd.TargetIsEnemy
+                    ? (_enemyPortraits.TryGetValue(dd.TargetId, out var ep) ? ep : null)
+                    : (_charPortraits.TryGetValue(dd.TargetId, out var cp) ? cp : null);
+                if (portrait is not null) SpawnDamageNumber(portrait.GlobalPosition, dd.Amount, dd.TargetIsEnemy);
+            }
         }
+    }
+
+    /// <summary>在 pos 处生成上飘+淡出的伤害数字（敌受击=暖金，角色受击=警示红，治疗负值=青白）。</summary>
+    private void SpawnDamageNumber(Vector2 pos, int amount, bool targetIsEnemy)
+    {
+        bool heal = amount < 0;
+        var label = new Label
+        {
+            Text = heal ? $"+{-amount}" : amount.ToString(),
+            ZIndex = 50,
+            Position = pos + new Vector2(-12, -30),
+        };
+        label.AddThemeFontSizeOverride("font_size", heal ? 18 : (amount >= 8 ? 24 : 18));
+        label.AddThemeColorOverride("font_color", heal ? UiPalette.ShieldTeal : (targetIsEnemy ? UiPalette.VulnGold : UiPalette.WarnOrange));
+        AddChild(label);
+        var tw = CreateTween();
+        tw.TweenProperty(label, "position:y", label.Position.Y - 36, 0.5f).SetTrans(Tween.TransitionType.Cubic);
+        tw.Parallel().TweenProperty(label, "modulate:a", 0f, 0.6f).SetDelay(0.15f);
+        tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(label)) label.QueueFree(); }));
     }
 
     private void Hover(PlayerAction action)
@@ -781,6 +825,10 @@ public partial class GameView : Control
         if (triggers.Count > 0) parts.Add("触发: " + string.Join(", ", triggers));
         if (charDmg.Count > 0) parts.Add("受伤: " + string.Join(", ", charDmg));
         if (enemyDmg > 0) parts.Add($"敌-{enemyDmg}");
+        // 文档 §五：数值预览实时含修正（附魔/易伤/蓄力），旁注"已含修正"
+        if (_hoverEvents.Any(e => e is GameEvent.EnchantmentApplied)
+            || _hoverEvents.OfType<GameEvent.EnemyTriggered>().Any(et => State?.Enemies.Find(x => x.Id == et.EnemyId)?.Charge > 0))
+            parts.Add("（已含修正）");
         if (_hoverEvents.Any(e => e is GameEvent.CharacterDied)) parts.Add("【角色阵亡】");
         if (_hoverEvents.Any(e => e is GameEvent.EnemyDied)) parts.Add("【敌死】");
         _previewLabel.Text = string.Join("   ", parts);

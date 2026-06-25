@@ -9,11 +9,11 @@ using Tongyuan.Core.Core;
 /// </summary>
 public static class CharacterTemplates
 {
-    // 占位色（ARGB int）
-    public const int ColorDamage = unchecked((int)0xFFCF3B3B);   // 红
-    public const int ColorDefense = unchecked((int)0xFF3B6CCF);  // 蓝
-    public const int ColorControl = unchecked((int)0xFF8E3BCF);  // 紫
-    public const int ColorSupport = unchecked((int)0xFF3BCF6A);  // 绿
+    // 四色系统（文档 §五）：玩家1朱红/2湛蓝/3翠绿/4琥珀（ARGB int）
+    public const int ColorDamage = unchecked((int)0xFFD4453A);   // 朱红
+    public const int ColorDefense = unchecked((int)0xFF3D7BD4);  // 湛蓝
+    public const int ColorControl = unchecked((int)0xFF3DA862);  // 翠绿
+    public const int ColorSupport = unchecked((int)0xFFE0A82E);  // 琥珀
 
     public static CharacterTemplate Damage() => new()
     {

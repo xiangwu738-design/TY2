@@ -1,4 +1,5 @@
 using Godot;
+using System.Globalization;
 using Tongyuan.Core.Core;
 
 namespace Tongyuan.UI;
@@ -9,11 +10,33 @@ namespace Tongyuan.UI;
 /// </summary>
 public static class UiPalette
 {
-    // ---- 角色色（镜像 CharacterTemplates）----
-    public static readonly Color DamageColor = new(0.81f, 0.23f, 0.23f);
-    public static readonly Color DefenseColor = new(0.23f, 0.42f, 0.81f);
-    public static readonly Color ControlColor = new(0.56f, 0.23f, 0.81f);
-    public static readonly Color SupportColor = new(0.23f, 0.81f, 0.42f);
+    // ---- 角色色（四色系统，文档 §五：玩家1朱红/2湛蓝/3翠绿/4琥珀）----
+    public static readonly Color DamageColor = Hex("#D4453A");
+    public static readonly Color DefenseColor = Hex("#3D7BD4");
+    public static readonly Color ControlColor = Hex("#3DA862");
+    public static readonly Color SupportColor = Hex("#E0A82E");
+    public static readonly Color[] PlayerColors = { DamageColor, DefenseColor, ControlColor, SupportColor };
+
+    // ---- 文档 §六 配色板 ----
+    public static readonly Color BgBase = Hex("#14181F");
+    public static readonly Color PanelBg = Hex("#1E2530");
+    public static readonly Color GoldBorder = Hex("#C8A858");
+    public static readonly Color TextMain = Hex("#ECE4D2");
+    public static readonly Color TextDim = Hex("#9A9486");
+    public static readonly Color EnemyRed = Hex("#A32D2D");
+    public static readonly Color WarnOrange = Hex("#D85A30");
+    public static readonly Color VulnGold = Hex("#EF9F27");
+    public static readonly Color ShieldTeal = Hex("#5DCAA5");
+    public static readonly Color PointerGold = Hex("#F5E6C0");
+
+    public static Color Hex(string h)
+    {
+        h = h.TrimStart('#');
+        int r = int.Parse(h.Substring(0, 2), NumberStyles.HexNumber);
+        int g = int.Parse(h.Substring(2, 2), NumberStyles.HexNumber);
+        int b = int.Parse(h.Substring(4, 2), NumberStyles.HexNumber);
+        return new Color(r / 255f, g / 255f, b / 255f);
+    }
 
     // ---- 卡牌底色 / 描边（按类型 + 伤害类型）----
     public static Color CardBg(CardDef def) => def.Type switch
@@ -89,16 +112,16 @@ public static class UiPalette
         font.FontNames = new string[] { "Microsoft YaHei", "Segoe UI", "Noto Sans CJK SC", "DejaVu Sans" };
         t.DefaultFont = font;
 
-        var btnNormal = Flat(new Color(0.20f, 0.22f, 0.27f), new Color(0.45f, 0.5f, 0.6f));
-        var btnHover = Flat(new Color(0.28f, 0.30f, 0.36f), Colors.White);
-        var btnPressed = Flat(new Color(0.16f, 0.18f, 0.23f), Colors.White);
+        var btnNormal = Flat(PanelBg, GoldBorder with { A = 0.6f });
+        var btnHover = Flat(PanelBg.Lightened(0.12f), GoldBorder);
+        var btnPressed = Flat(PanelBg.Darkened(0.1f), GoldBorder);
         t.SetStylebox("normal", "Button", btnNormal);
         t.SetStylebox("hover", "Button", btnHover);
         t.SetStylebox("pressed", "Button", btnPressed);
-        t.SetStylebox("disabled", "Button", Flat(new Color(0.14f, 0.14f, 0.16f), new Color(0.3f, 0.3f, 0.32f)));
+        t.SetStylebox("disabled", "Button", Flat(BgBase, TextDim with { A = 0.3f }));
 
-        t.SetStylebox("panel", "Panel", Flat(new Color(0.13f, 0.14f, 0.17f), new Color(0.3f, 0.32f, 0.38f), 1, 6));
-        t.SetColor("font_color", "Label", new Color(0.86f, 0.88f, 0.92f));
+        t.SetStylebox("panel", "Panel", Flat(PanelBg, GoldBorder with { A = 0.5f }, 1, 6));
+        t.SetColor("font_color", "Label", TextMain);
         t.SetColor("font_hover_color", "LinkButton", Colors.White);
         return t;
     }
