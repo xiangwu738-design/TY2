@@ -66,5 +66,11 @@ public sealed class CardBuilder
     public CardBuilder WithArt(string? artPath) { _d.ArtPath = artPath; return this; }
     public CardBuilder WithDesc(string desc) { _d.Description = desc; return this; }
 
+    /// <summary>挂卡牌独立逻辑（代码卡）。数据字段（Magnitude/Cost/类型）仍用于 UI/预览/EffectiveAttack。</summary>
+    public CardBuilder WithCustomEffect(ICardEffect effect) { _d.CustomEffect = effect; return this; }
+
+    /// <summary>代码卡需要玩家点选敌人目标。</summary>
+    public CardBuilder NeedsTargetEnemy() { _d.NeedsTargetEnemy = true; return this; }
+
     public CardDef Build() => _d;
 }

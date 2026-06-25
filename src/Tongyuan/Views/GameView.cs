@@ -563,10 +563,11 @@ public partial class GameView : Control
         ? (def.DamageType == DamageType.Ranged ? new Color(0.5f, 0.8f, 1f) : new Color(0.9f, 0.5f, 0.4f))
         : new Color(0.6f, 0.7f, 0.85f);
 
-    /// <summary>需要玩家点选目标的牌：远程攻击（自选敌）、力量附魔·具体牌（选手牌）。
-    /// 近战（打击/斩击/突刺）固定自动锁定首个敌（规格：仅远程自选）。</summary>
+    /// <summary>需要玩家点选目标的牌：远程攻击、代码卡(NeedsTargetEnemy)、力量附魔·具体牌。
+    /// 近战（打击/斩击/突刺）固定自动锁定（规格：仅远程自选）。</summary>
     private static bool NeedsTarget(CardDef def) =>
         (def.Effect == EffectKind.AttackDamage && def.DamageType == DamageType.Ranged)
+        || def.NeedsTargetEnemy
         || (def.Effect == EffectKind.ApplyEnchantment && def.EnchantType == EnchantmentType.Power && def.EnchantScope == EnchantmentScope.SpecificCard);
 
     private void BeginTargeting(int charId, Card card)
@@ -672,16 +673,18 @@ public partial class GameView : Control
         AppendLog("[b]==== 加入局域网 ====[/b]");
     }
 
-    // ---- 自定义/示例卡牌（规格 §6/§7 可扩展）----
+    // ---- 自定义/示例卡牌（规格 §6/§7 可扩展；数据卡 + 代码卡）----
+    private static readonly CardDef[] DealtCatalog = SampleCards.All.Concat(CodeCards.All).ToArray();
     private int _sampleIdx;
     private void AddCustomCard()
     {
         var c = ActiveCharacter;
         if (c is null || State is null) return;
-        var def = SampleCards.All[_sampleIdx % SampleCards.All.Length];
+        var def = DealtCatalog[_sampleIdx % DealtCatalog.Length];
         _sampleIdx++;
         c.Hand.Add(new Card { Def = def });
-        AppendLog($"[color=#80ff80]✦ 发示例卡：{def.Name}（{def.EffectDescription()}）[/color]");
+        string tag = def.CustomEffect is not null ? "代码卡" : "数据卡";
+        AppendLog($"[color=#80ff80]✦ 发示例卡[{tag}]：{def.Name}（{def.EffectDescription()}）[/color]");
         Render();
     }
 

@@ -195,6 +195,13 @@ public sealed class GameState
     /// <summary>结算牌效果（③，占位终点）。</summary>
     private void SettleCardEffect(Character ch, Card card, PlayerAction? action)
     {
+        // 卡牌独立逻辑（ICardEffect）：优先派发，覆盖纯数据效果
+        if (card.Def.CustomEffect is not null)
+        {
+            card.Def.CustomEffect.Apply(this, ch, card, action);
+            return;
+        }
+
         switch (card.Def.Effect)
         {
             case EffectKind.AttackDamage:
@@ -237,17 +244,47 @@ public sealed class GameState
         }
 
         int baseDmg = card.EffectiveAttack; // 含力量附魔
-        foreach (var enemy in targets)
-        {
-            int dmg = baseDmg + enemy.ConsumeVulnerableBonus();
-            enemy.Hp -= dmg;
-            Events.Add(new GameEvent.DamageDealt(enemy.Id, TargetIsEnemy: true, dmg));
-            if (!enemy.IsAlive) Events.Add(new GameEvent.EnemyDied(enemy.Id));
-        }
-        if (targets.Any(t => !t.IsAlive)) ContractEnemyPositions();
+        foreach (var enemy in targets) DamageEnemy(enemy, baseDmg);
     }
 
     private Enemy? AliveEnemyAtPosition(int pos) => Enemies.FirstOrDefault(e => e.IsAlive && e.Position == pos);
+
+    // ---- 暴露给 ICardEffect（卡牌独立逻辑）的结算辅助 API ----
+
+    /// <summary>对敌人造伤（含易伤结算/死亡事件/阵亡收缩）。代码卡用此造伤。</summary>
+    public void DamageEnemy(Enemy enemy, int amount)
+    {
+        if (!enemy.IsAlive || amount <= 0) return;
+        int dmg = amount + enemy.ConsumeVulnerableBonus();
+        enemy.Hp -= dmg;
+        Emit(new GameEvent.DamageDealt(enemy.Id, TargetIsEnemy: true, dmg));
+        if (!enemy.IsAlive)
+        {
+            Emit(new GameEvent.EnemyDied(enemy.Id));
+            ContractEnemyPositions();
+        }
+    }
+
+    /// <summary>治疗角色（不超上限）。代码卡用此（如吸血）。</summary>
+    public void HealCharacter(Character c, int amount)
+    {
+        if (!c.IsAlive || amount <= 0) return;
+        c.Hp = Math.Min(c.MaxHp, c.Hp + amount);
+        // 复用 DamageDealt 负值不便；用 CardsDrawn 之外…这里发一个通用事件占位
+        Emit(new GameEvent.DamageDealt(c.Id, TargetIsEnemy: false, -amount)); // 负值=治疗（UI 可据此显示）
+    }
+
+    /// <summary>近战位移到位1（暴露）。代码卡按需调用。</summary>
+    // MoveToFront 见位置系统段（public）
+
+    /// <summary>取某位置的存活敌人。代码卡用此选目标。</summary>
+    public Enemy? EnemyAtPosition(int pos) => AliveEnemyAtPosition(pos);
+
+    /// <summary>追加一个事件到当前回合事件流。代码卡用此发事件。</summary>
+    public void Emit(GameEvent e) => Events.Add(e);
+
+    /// <summary>角色抽 n 张（带种子洗牌）。代码卡可用。</summary>
+    public void CharacterDraw(Character c, int n) => c.Draw(n, Rng);
 
     /// <summary>敌方阵亡收缩：保持敌人位置 1..M 连续（与角色位置对称）。</summary>
     public void ContractEnemyPositions()
@@ -336,7 +373,7 @@ public sealed class GameState
 
     // ---- 位置系统（规格 §4.3）----
     /// <summary>出攻击牌→移到1位，身前的人后移（输出即暴露）。</summary>
-    private void MoveToFront(Character ch)
+    public void MoveToFront(Character ch)
     {
         if (ch.Position == 1) return;
         int from = ch.Position;

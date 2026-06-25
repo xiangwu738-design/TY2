@@ -34,6 +34,12 @@ public sealed class CardDef
     public EnchantmentType EnchantType { get; set; } = EnchantmentType.Power;
     public EnchantmentScope EnchantScope { get; set; } = EnchantmentScope.SpecificCard;
 
+    /// <summary>卡牌独立逻辑（代码卡）。非 null 时结算优先派发给它，覆盖纯数据 Effect。</summary>
+    public ICardEffect? CustomEffect { get; set; }
+
+    /// <summary>代码卡是否需要玩家点选敌人目标（远程数据卡自动为 true）。</summary>
+    public bool NeedsTargetEnemy { get; set; }
+
     /// <summary>展示用描述（空则自动生成）。避免“描述模糊”。</summary>
     public string Description { get; set; } = string.Empty;
 
