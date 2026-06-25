@@ -7,6 +7,8 @@ public abstract record GameEvent
 {
     public sealed record PointerMoved(int From, int To) : GameEvent;
     public sealed record EnemyTriggered(int EnemyId, int TargetPosition, int Damage) : GameEvent;
+    public sealed record EnemyCharged(int EnemyId, int Amount) : GameEvent;   // 蓄力（示警，下次攻击附带）
+    public sealed record EnemyIdle(int EnemyId) : GameEvent;                   // 待机/示警
     public sealed record ShieldAbsorbed(int ProtectedCharacterId, int Amount, bool Exhausted) : GameEvent;
     public sealed record CardPlayed(int CharacterId, Guid CardInstanceId) : GameEvent;
     public sealed record PrepUsed(int CharacterId, int Drawn) : GameEvent;

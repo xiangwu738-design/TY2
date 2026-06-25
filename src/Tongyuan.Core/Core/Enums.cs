@@ -19,6 +19,19 @@ public enum CardType
     Skill,   // 技能/附魔牌
 }
 
+/// <summary>
+/// 攻击伤害类型（规格：我方手牌分 打击/斩击/突刺/远程）。
+/// 远程=自选敌人且不造成位移；其余近战=出牌移到位1（暴露）。
+/// 预留：与敌方类型/护甲的克制关系（扩展位）。
+/// </summary>
+public enum DamageType
+{
+    Blunt,  // 打击
+    Slash,  // 斩击
+    Thrust, // 突刺
+    Ranged, // 远程：自选敌人、不位移
+}
+
 /// <summary>敌人三型（规格 §4.3）：斩=位1、突=位2、打=全体。</summary>
 public enum EnemyKind
 {

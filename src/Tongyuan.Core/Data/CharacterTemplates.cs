@@ -21,8 +21,9 @@ public static class CharacterTemplates
         PrepTemplate = new PrepCardTemplate(),
         CardPool =
         {
-            new CardDef { Id = "dmg_atk1", Name = "重击", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 8 },
-            new CardDef { Id = "dmg_atk2", Name = "连击", Type = CardType.Attack, Cost = 1, Effect = EffectKind.AttackDamage, Magnitude = 4 },
+            new CardDef { Id = "dmg_atk1", Name = "重击", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 8, DamageType = DamageType.Blunt },
+            new CardDef { Id = "dmg_atk2", Name = "连斩", Type = CardType.Attack, Cost = 1, Effect = EffectKind.AttackDamage, Magnitude = 4, DamageType = DamageType.Slash },
+            new CardDef { Id = "dmg_ranged", Name = "远射", Type = CardType.Attack, Cost = 1, Effect = EffectKind.AttackDamage, Magnitude = 5, DamageType = DamageType.Ranged },
             new CardDef { Id = "dmg_skill", Name = "蓄力", Type = CardType.Skill, Cost = 0, Effect = EffectKind.ApplyEnchantment, EnchantType = EnchantmentType.Power, EnchantScope = EnchantmentScope.SpecificCard, Magnitude = 2 },
         },
     };
@@ -35,7 +36,7 @@ public static class CharacterTemplates
         {
             new CardDef { Id = "def_shd1", Name = "坚壁", Type = CardType.Defense, Cost = 1, Effect = EffectKind.ApplyShield, Magnitude = 8, ShieldType = ShieldType.Fixed },
             new CardDef { Id = "def_shd2", Name = "屏障", Type = CardType.Defense, Cost = 1, Effect = EffectKind.ApplyShield, Magnitude = 5, ShieldType = ShieldType.Count, ShieldHits = 2 },
-            new CardDef { Id = "def_atk", Name = "反击", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 5 },
+            new CardDef { Id = "def_atk", Name = "反击", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 5, DamageType = DamageType.Thrust },
         },
     };
 
@@ -47,7 +48,7 @@ public static class CharacterTemplates
         {
             new CardDef { Id = "ctl_enc1", Name = "易伤", Type = CardType.Skill, Cost = 0, Effect = EffectKind.ApplyEnchantment, EnchantType = EnchantmentType.Vulnerable, EnchantScope = EnchantmentScope.SpecificCard, Magnitude = 2 },
             new CardDef { Id = "ctl_enc2", Name = "敌蓄力", Type = CardType.Skill, Cost = 1, Effect = EffectKind.ApplyEnchantment, EnchantType = EnchantmentType.Charge, Magnitude = 1 },
-            new CardDef { Id = "ctl_atk", Name = "点穴", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 5 },
+            new CardDef { Id = "ctl_atk", Name = "点穴", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 5, DamageType = DamageType.Thrust },
         },
     };
 
@@ -59,7 +60,7 @@ public static class CharacterTemplates
         {
             new CardDef { Id = "sup_shd", Name = "守护", Type = CardType.Defense, Cost = 1, Effect = EffectKind.ApplyShield, Magnitude = 6, ShieldType = ShieldType.Fixed },
             new CardDef { Id = "sup_enc", Name = "授能", Type = CardType.Skill, Cost = 0, Effect = EffectKind.ApplyEnchantment, EnchantType = EnchantmentType.Power, EnchantScope = EnchantmentScope.AllInDiscard, Magnitude = 1 },
-            new CardDef { Id = "sup_atk", Name = "惩戒", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 4 },
+            new CardDef { Id = "sup_atk", Name = "惩戒", Type = CardType.Attack, Cost = 2, Effect = EffectKind.AttackDamage, Magnitude = 4, DamageType = DamageType.Ranged },
         },
     };
 

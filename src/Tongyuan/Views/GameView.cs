@@ -19,6 +19,12 @@ public partial class GameView : Control
     private PlayerAction? _hoverAction;
     private List<GameEvent>? _hoverEvents;
 
+    // 目标选取（攻击选敌 / 力量附魔选牌）
+    private enum TargetMode { None, Enemy, HandCard }
+    private TargetMode _targetMode = TargetMode.None;
+    private Card? _targetingCard;
+    private int _targetingCharId;
+
     private Label _topLabel = null!;
     private HBoxContainer _battleField = null!;
     private HBoxContainer _timelineRow = null!;
@@ -202,7 +208,7 @@ public partial class GameView : Control
         arrow.AddThemeFontSizeOverride("font_size", 20);
         _battleField.AddChild(arrow);
         foreach (var e in State.Enemies)
-            _battleField.AddChild(MakeEnemyBlock(e));
+            _battleField.AddChild(MakeEnemyBlock(e, _targetMode == TargetMode.Enemy));
     }
 
     private Control MakePortrait(Character c, bool isActive)
@@ -231,8 +237,29 @@ public partial class GameView : Control
         return p;
     }
 
-    private Control MakeEnemyBlock(Enemy e)
+    private Control MakeEnemyBlock(Enemy e, bool clickable)
     {
+        if (clickable && e.IsAlive)
+        {
+            var btn = new Button
+            {
+                Text = $"➜ {e.Name}\n{IntentText(e)}\nHP {e.Hp}",
+                CustomMinimumSize = new Vector2(120, 92),
+            };
+            btn.AddThemeFontSizeOverride("font_size", 11);
+            var csb = new StyleBoxFlat
+            {
+                BgColor = new Color(0.30f, 0.16f, 0.10f),
+                BorderColor = new Color(1f, 0.85f, 0.3f),
+            };
+            csb.SetBorderWidthAll(3); csb.SetCornerRadiusAll(4);
+            btn.AddThemeStyleboxOverride("normal", csb);
+            btn.AddThemeStyleboxOverride("hover", csb);
+            int eid = e.Id;
+            btn.Pressed += () => PlayCardAtEnemy(eid);
+            return btn;
+        }
+
         var p = new PanelContainer { CustomMinimumSize = new Vector2(120, 92) };
         var sb = new StyleBoxFlat
         {
@@ -250,9 +277,9 @@ public partial class GameView : Control
         nl.AddThemeColorOverride("font_color", new Color(1f, 0.6f, 0.6f));
         nl.AddThemeFontSizeOverride("font_size", 13);
         vb.AddChild(nl);
-        var kind = new Label { Text = $"{KindText(e.Kind)} · {e.EffectivePower}伤" };
+        var kind = new Label { Text = $"{KindText(e.Kind)} · 下一步:{IntentText(e)}" };
         kind.AddThemeFontSizeOverride("font_size", 11);
-        kind.AddThemeColorOverride("font_color", Colors.DimGray);
+        kind.AddThemeColorOverride("font_color", new Color(0.85f, 0.7f, 0.4f));
         vb.AddChild(kind);
         var bar = new ProgressBar { MinValue = 0, MaxValue = e.Hp > 0 ? e.Hp : 1, Value = e.Hp, CustomMinimumSize = new Vector2(96, 0) };
         vb.AddChild(bar);
@@ -267,6 +294,40 @@ public partial class GameView : Control
             vb.AddChild(cl);
         }
         return p;
+    }
+
+    /// <summary>敌人下一步行动的意图文本（受击模式差异化展示）。</summary>
+    private static string IntentText(Enemy e)
+    {
+        if (!e.IsAlive) return "—";
+        return e.NextAction switch
+        {
+            EnemyAction.Attack a => a.TargetPos == -1 ? $"打全体 {a.Amount + e.Charge}伤"
+                                   : a.TargetPos == 1 ? $"斩位1 {a.Amount + e.Charge}伤"
+                                   : a.TargetPos == 2 ? $"突位2 {a.Amount + e.Charge}伤"
+                                   : $"{a.Amount + e.Charge}伤",
+            EnemyAction.Charge c => $"蓄力+{c.Amount}",
+            EnemyAction.Idle => "待机",
+            _ => "?",
+        };
+    }
+
+    private void PlayCardAtEnemy(int enemyId)
+    {
+        if (_targetingCard is not Card card) return;
+        var action = new PlayerAction(_targetingCharId, ActionType.PlayCard, card.InstanceId, TargetEnemyId: enemyId);
+        _targetMode = TargetMode.None;
+        _targetingCard = null;
+        Play(action);
+    }
+
+    private void PlayCardAtHandCard(Guid targetCardId)
+    {
+        if (_targetingCard is not Card card) return;
+        var action = new PlayerAction(_targetingCharId, ActionType.PlayCard, card.InstanceId, TargetCardInstanceId: targetCardId);
+        _targetMode = TargetMode.None;
+        _targetingCard = null;
+        Play(action);
     }
 
     private void RenderTimeline()
@@ -331,6 +392,35 @@ public partial class GameView : Control
         ClearChildren(_actionRow);
         if (c is null || !c.IsAlive || IsBattleOver()) return;
 
+        // 目标选取模式
+        if (_targetMode != TargetMode.None)
+        {
+            string hint = _targetMode == TargetMode.Enemy
+                ? "🎯 选择目标敌人（远程不位移 / 近战移位1）"
+                : "✦ 选择一张手牌挂力量附魔";
+            _handRow.AddChild(new Label { Text = hint });
+            var cancel = new Button { Text = "取消" };
+            cancel.Pressed += CancelTargeting;
+            _actionRow.AddChild(cancel);
+            if (_targetMode == TargetMode.HandCard && _targetingCard is Card ench)
+            {
+                foreach (var card in c.Hand)
+                {
+                    if (card.InstanceId == ench.InstanceId) continue; // 不附魔自己
+                    var btn = new Button
+                    {
+                        Text = $"➜ {card.Def.Name}·{CardDef.DamageText(card.Def.DamageType)}",
+                        CustomMinimumSize = new Vector2(120, 40),
+                    };
+                    btn.AddThemeFontSizeOverride("font_size", 11);
+                    Guid tid = card.InstanceId;
+                    btn.Pressed += () => PlayCardAtHandCard(tid);
+                    _actionRow.AddChild(btn);
+                }
+            }
+            return;
+        }
+
         foreach (var card in c.Hand)
             _handRow.AddChild(MakeCardButton(c, card));
 
@@ -361,17 +451,47 @@ public partial class GameView : Control
 
     private Button MakeCardButton(Character c, Card card)
     {
+        var def = card.Def;
+        string typeTag = def.Type == CardType.Attack ? CardDef.DamageText(def.DamageType) : def.Type.ToString();
         var btn = new Button
         {
-            Text = $"{card.Def.Name}\n占{card.Def.Cost}",
-            CustomMinimumSize = new Vector2(80, 40),
+            Text = $"{def.Name}·{typeTag}\n占{def.Cost}｜{def.EffectDescription()}",
+            CustomMinimumSize = new Vector2(150, 56),
+            ClipText = true,
         };
-        btn.AddThemeFontSizeOverride("font_size", 12);
+        btn.AddThemeFontSizeOverride("font_size", 11);
         var action = ActionForCard(c, card);
         btn.MouseEntered += () => Hover(action);
         btn.MouseExited += ClearHover;
-        btn.Pressed += () => Play(action);
+        int id = c.Id;
+        if (NeedsTarget(def))
+            btn.Pressed += () => BeginTargeting(id, card);
+        else
+            btn.Pressed += () => Play(action);
         return btn;
+    }
+
+    /// <summary>需要玩家点选目标的牌：攻击（选敌）、力量附魔·具体牌（选手牌）。</summary>
+    private static bool NeedsTarget(CardDef def) =>
+        def.Effect == EffectKind.AttackDamage
+        || (def.Effect == EffectKind.ApplyEnchantment && def.EnchantType == EnchantmentType.Power && def.EnchantScope == EnchantmentScope.SpecificCard);
+
+    private void BeginTargeting(int charId, Card card)
+    {
+        var def = card.Def;
+        _targetingCharId = charId;
+        _targetingCard = card;
+        _targetMode = def.Effect == EffectKind.AttackDamage ? TargetMode.Enemy : TargetMode.HandCard;
+        _hoverAction = null;
+        _hoverEvents = null;
+        Render();
+    }
+
+    private void CancelTargeting()
+    {
+        _targetMode = TargetMode.None;
+        _targetingCard = null;
+        Render();
     }
 
     // ------------------------------------------------------------------ 动作
@@ -432,6 +552,8 @@ public partial class GameView : Control
         _activeId = State.Characters[0].Id;
         _hoverAction = null;
         _hoverEvents = null;
+        _targetMode = TargetMode.None;
+        _targetingCard = null;
         _log.Clear();
         AppendLog("[b]==== 新局开始 ====[/b]");
         Render();
@@ -541,6 +663,8 @@ public partial class GameView : Control
         {
             GameEvent.PointerMoved pm => $"    → 指针 {pm.From}→{pm.To}",
             GameEvent.EnemyTriggered et => $"    [color=#ff8080]敌 {EnemyName(et.EnemyId)} 触发 → 位{et.TargetPosition} {et.Damage}伤[/color]",
+            GameEvent.EnemyCharged ec => $"    [color=#ffd070]敌 {EnemyName(ec.EnemyId)} 蓄力 +{ec.Amount}（下次攻击附带）[/color]",
+            GameEvent.EnemyIdle ei => $"    敌 {EnemyName(ei.EnemyId)} 待机",
             GameEvent.DamageDealt dd => dd.TargetIsEnemy
                 ? $"    敌 {dd.TargetId} 受 {dd.Amount} 伤"
                 : $"       {CharName(dd.TargetId)} 受 {dd.Amount} 伤",

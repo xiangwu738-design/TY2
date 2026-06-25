@@ -41,8 +41,25 @@ public partial class Main : Control
     {
         var tl = new Timeline();
         for (int i = 0; i < 6; i++) tl.Nodes.Add(NodeType.Empty);
-        tl.Enemies.Add(new Enemy { Id = 1, Name = "斩击兵", Kind = EnemyKind.Slash, Power = 5, NodeSlot = 2, Hp = 20 });
-        tl.Enemies.Add(new Enemy { Id = 2, Name = "突刺兵", Kind = EnemyKind.Thrust, Power = 4, NodeSlot = 4, Hp = 18 });
+        // 敌人各带差异化行动链（链尽循环，不无限增长）
+        var slash = new Enemy { Id = 1, Name = "斩击兵", Kind = EnemyKind.Slash, Power = 5, NodeSlot = 2, Hp = 20 };
+        slash.ActionChain.AddRange(new EnemyAction[] {
+            new EnemyAction.Attack(5, 1),                 // 斩位1
+        });
+        var thrust = new Enemy { Id = 2, Name = "突刺兵", Kind = EnemyKind.Thrust, Power = 4, NodeSlot = 4, Hp = 18 };
+        thrust.ActionChain.AddRange(new EnemyAction[] {
+            new EnemyAction.Charge(2),                   // 蓄力示警
+            new EnemyAction.Attack(4, 2),                 // 突位2（含蓄力）
+            new EnemyAction.Idle(),                       // 喘息
+        });
+        var striker = new Enemy { Id = 3, Name = "重锤兵", Kind = EnemyKind.Strike, Power = 3, NodeSlot = 5, Hp = 26 };
+        striker.ActionChain.AddRange(new EnemyAction[] {
+            new EnemyAction.Charge(3),
+            new EnemyAction.Attack(3, -1),                // 打全体（含蓄力）
+        });
+        tl.Enemies.Add(slash);
+        tl.Enemies.Add(thrust);
+        tl.Enemies.Add(striker);
 
         var gs = new GameState(seed: 7) { Timeline = tl };
         int pos = 1;

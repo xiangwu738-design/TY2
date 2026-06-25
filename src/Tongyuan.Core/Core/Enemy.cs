@@ -18,6 +18,25 @@ public sealed class Enemy
     /// <summary>敌人身上的持续状态（如易伤），来自附魔牌。</summary>
     public List<Enchantment> Statuses { get; } = new();
 
+    /// <summary>行动链（规格：理论可无限→过长用循环）。链尽则循环回开头。</summary>
+    public List<EnemyAction> ActionChain { get; } = new();
+    public int ChainIndex { get; set; }
+
+    /// <summary>下一步将执行的行动（不推进）。链空则回退为默认攻击。</summary>
+    public EnemyAction NextAction =>
+        ActionChain.Count > 0 ? ActionChain[ChainIndex % ActionChain.Count]
+                              : new EnemyAction.Attack(EffectivePower, null);
+
+    /// <summary>推进并返回本次执行的行动（链尽循环）。</summary>
+    public EnemyAction AdvanceChain()
+    {
+        if (ActionChain.Count == 0)
+            return new EnemyAction.Attack(EffectivePower, null);
+        var a = ActionChain[ChainIndex % ActionChain.Count];
+        ChainIndex = (ChainIndex + 1) % ActionChain.Count;
+        return a;
+    }
+
     /// <summary>易伤加成：受击时额外伤害（消耗一层）。</summary>
     public int ConsumeVulnerableBonus()
     {
@@ -57,7 +76,9 @@ public sealed class Enemy
             Charge = Charge,
             NodeSlot = NodeSlot,
             Hp = Hp,
+            ChainIndex = ChainIndex,
         };
+        foreach (var a in ActionChain) e.ActionChain.Add(a); // 行动链是 record，不可变，浅拷贝即可
         foreach (var s in Statuses) e.Statuses.Add(s.Clone());
         return e;
     }

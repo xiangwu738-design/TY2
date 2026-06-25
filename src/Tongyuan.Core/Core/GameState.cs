@@ -121,26 +121,44 @@ public sealed class GameState
     {
         var enemy = Timeline.EnemyAt(slot);
         if (enemy is null || !enemy.IsAlive) return;
+        // 行动链：按链执行，链尽循环（规格：理论可无限→过长用循环）
+        var act = enemy.AdvanceChain();
+        ExecuteEnemyAction(enemy, act);
+    }
 
-        if (enemy.TargetPosition == -1)
+    private void ExecuteEnemyAction(Enemy enemy, EnemyAction act)
+    {
+        switch (act)
         {
-            // 打：全体存活角色
-            foreach (var target in Characters.Where(c => c.IsAlive).ToList())
-                ApplyEnemyHit(enemy, target);
-        }
-        else
-        {
-            var target = Characters.Find(c => c.IsAlive && c.Position == enemy.TargetPosition);
-            if (target is null) return; // 突=位2，N<2 落空
-            ApplyEnemyHit(enemy, target);
+            case EnemyAction.Attack atk:
+                int dmg = atk.Amount + enemy.Charge; // 蓄力附带，释放后清零
+                enemy.Charge = 0;
+                int targetPos = atk.TargetPos ?? enemy.TargetPosition;
+                Events.Add(new GameEvent.EnemyTriggered(enemy.Id, targetPos, dmg));
+                if (targetPos == -1)
+                {
+                    foreach (var t in Characters.Where(c => c.IsAlive).ToList())
+                        ApplyEnemyHit(enemy, t, dmg);
+                }
+                else
+                {
+                    var t = Characters.Find(c => c.IsAlive && c.Position == targetPos);
+                    if (t is null) return; // 突=位2，N<2 落空
+                    ApplyEnemyHit(enemy, t, dmg);
+                }
+                break;
+            case EnemyAction.Charge ch:
+                enemy.Charge += ch.Amount;
+                Events.Add(new GameEvent.EnemyCharged(enemy.Id, ch.Amount));
+                break;
+            case EnemyAction.Idle:
+                Events.Add(new GameEvent.EnemyIdle(enemy.Id));
+                break;
         }
     }
 
-    private void ApplyEnemyHit(Enemy enemy, Character target)
+    private void ApplyEnemyHit(Enemy enemy, Character target, int raw)
     {
-        Events.Add(new GameEvent.EnemyTriggered(enemy.Id, enemy.TargetPosition, enemy.EffectivePower));
-        int raw = enemy.EffectivePower;
-
         // ② 护盾吸收（被守护者）
         int absorbed = 0;
         foreach (var sh in Shields.Where(s => s.ProtectedCharacterId == target.Id && !s.IsExhausted).ToList())
@@ -195,10 +213,11 @@ public sealed class GameState
         }
     }
 
-    // 攻击：打出者移到位1（身前的人后移=暴露），伤害打敌
+    // 攻击：近战（打击/斩击/突刺）打出者移到位1（暴露）；远程不位移、自选敌（规格）。
     private void DoAttack(Character ch, Card card, PlayerAction? action)
     {
-        MoveToFront(ch);
+        bool ranged = card.Def.DamageType == DamageType.Ranged;
+        if (!ranged) MoveToFront(ch);
         if (action?.TargetEnemyId is int eid)
         {
             var enemy = Enemies.Find(e => e.Id == eid);
