@@ -27,6 +27,7 @@ public partial class GameView : Control
     private HBoxContainer _actionRow = null!;
     private Label _previewLabel = null!;
     private RichTextLabel _log = null!;
+    private MarginContainer? _margin;
 
     public override void _Ready()
     {
@@ -38,6 +39,19 @@ public partial class GameView : Control
         Render();
     }
 
+    /// <summary>由 Main 按视口尺寸驱动：显式设置本节点与内部 MarginContainer 尺寸
+    /// （运行时 AddChild 的 Control 不会由普通 Control 父节点自动布局，须显式驱动）。</summary>
+    public void ResizeTo(Vector2 size)
+    {
+        Size = size;
+        Position = Vector2.Zero;
+        if (_margin is not null)
+        {
+            _margin.Position = Vector2.Zero;
+            _margin.Size = size;
+        }
+    }
+
     // ------------------------------------------------------------------ UI 构建
     private void BuildUi()
     {
@@ -47,6 +61,7 @@ public partial class GameView : Control
         margin.AddThemeConstantOverride("margin_right", 10);
         margin.AddThemeConstantOverride("margin_top", 8);
         margin.AddThemeConstantOverride("margin_bottom", 8);
+        _margin = margin;
         AddChild(margin);
 
         var scroll = new ScrollContainer

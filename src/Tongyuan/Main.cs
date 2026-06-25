@@ -10,20 +10,31 @@ namespace Tongyuan;
 /// <summary>
 /// 主入口节点。P5：搭一个示例战场（4 角色模板 + 敌人 + 时间轴），绑定 GameView 渲染占位美术。
 /// </summary>
-public partial class Main : Node
+public partial class Main : Control
 {
+    private GameView? _view;
+
     public override void _Ready()
     {
+        SetAnchorsPreset(LayoutPreset.FullRect);
         var state = BuildSampleBattle();
         GD.Print($"[同渊] P5 示例战场就绪 | 角色={state.Characters.Count} 敌人={state.Enemies.Count} 时间轴={state.Timeline.Length} 指针={state.Pointer}");
 
-        var view = new GameView { State = state };
-        AddChild(view);
+        _view = new GameView { State = state };
+        AddChild(_view);
+        GetViewport().Connect("size_changed", Callable.From(ResizeView));
+        ResizeView();
 
         // 布局自检（无重叠 / 在视口内）——P5 截图矩形检查的确定性等价
         int hand = state.Characters[0].Hand.Count;
         var layout = BattleLayout.Compute(state.AliveCharacters.Count(), state.Enemies.Count, state.Timeline.Length, hand, state.Pointer);
         GD.Print($"[同渊] 布局自检: 无重叠={layout.NoOverlaps()} 在视口内={layout.AllWithinViewport()}");
+    }
+
+    private void ResizeView()
+    {
+        if (_view is null || !IsInstanceValid(_view)) return;
+        _view.ResizeTo(GetViewport().GetVisibleRect().Size);
     }
 
     public static GameState BuildSampleBattle()
