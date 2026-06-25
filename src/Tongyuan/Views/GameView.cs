@@ -5,6 +5,7 @@ using System.Linq;
 using Tongyuan.Core.Core;
 using Tongyuan.Core.Data;
 using Tongyuan.Net;
+using Tongyuan.UI;
 
 namespace Tongyuan.Views;
 
@@ -514,36 +515,21 @@ public partial class GameView : Control
         _actionRow.AddChild(skip);
     }
 
-    private Button MakeCardButton(Character c, Card card)
+    private Control MakeCardButton(Character c, Card card)
     {
         var def = card.Def;
-        string typeTag = def.Type == CardType.Attack ? CardDef.DamageText(def.DamageType) : def.Type.ToString();
-        var btn = new Button
-        {
-            Text = $"〔{typeTag}〕{def.Name}\n占{def.Cost}｜{def.EffectDescription()}",
-            CustomMinimumSize = new Vector2(168, 92),
-            ClipText = true,
-            Alignment = HorizontalAlignment.Center,
-        };
-        btn.AddThemeFontSizeOverride("font_size", 11);
-        // 按类型着色（卡牌化；美术资源后填 ArtPath 时此处替换为卡面图）
-        var sb = new StyleBoxFlat { BgColor = CardBgColor(def), BorderColor = CardAccentColor(def) };
-        sb.SetBorderWidthAll(2); sb.SetCornerRadiusAll(6);
-        sb.ContentMarginLeft = 4; sb.ContentMarginTop = 4; sb.ContentMarginRight = 4; sb.ContentMarginBottom = 4;
-        btn.AddThemeStyleboxOverride("normal", sb);
-        var hov = new StyleBoxFlat { BgColor = CardBgColor(def).Lightened(0.12f), BorderColor = Colors.White };
-        hov.SetBorderWidthAll(2); hov.SetCornerRadiusAll(6);
-        btn.AddThemeStyleboxOverride("hover", hov);
-
+        var view = new CardView();
+        view.Setup(card, c);
         var action = ActionForCard(c, card);
-        btn.MouseEntered += () => Hover(action);
-        btn.MouseExited += ClearHover;
+        view.OnHovered += _ => Hover(action);
+        view.OnUnhovered += _ => ClearHover();
         int id = c.Id;
-        if (NeedsTarget(def))
-            btn.Pressed += () => BeginTargeting(id, card);
-        else
-            btn.Pressed += () => Play(action);
-        return btn;
+        view.OnClicked += _ =>
+        {
+            if (NeedsTarget(def)) BeginTargeting(id, card);
+            else Play(action);
+        };
+        return view;
     }
 
     private static Color CardBgColor(CardDef def) => def.Type switch
