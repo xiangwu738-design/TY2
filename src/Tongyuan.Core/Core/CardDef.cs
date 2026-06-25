@@ -10,6 +10,13 @@ public enum EffectKind
     DrawCards,       // 整备：抽牌（整备牌专用）
 }
 
+/// <summary>卡牌稀有度（UI 重置：卡框边色按稀有度）。</summary>
+public enum Rarity
+{
+    Common,
+    Rare,
+}
+
 /// <summary>
 /// 卡牌定义（静态模板）。具体数值/卡牌内容用模板占位，登记 §7，由用户后填（规格 §6）。
 /// </summary>
@@ -39,6 +46,9 @@ public sealed class CardDef
 
     /// <summary>代码卡是否需要玩家点选敌人目标（远程数据卡自动为 true）。</summary>
     public bool NeedsTargetEnemy { get; set; }
+
+    /// <summary>稀有度（卡框边色）。默认 Common。</summary>
+    public Rarity Rarity { get; set; } = Rarity.Common;
 
     /// <summary>展示用描述（空则自动生成）。避免“描述模糊”。</summary>
     public string Description { get; set; } = string.Empty;

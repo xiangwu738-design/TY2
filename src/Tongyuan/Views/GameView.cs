@@ -647,7 +647,7 @@ public partial class GameView : Control
     }
 
     // ---- 局域网联机 ----
-    private void StartLanHost()
+    public void StartLanHost()
     {
         if (State is null) return;
         _net?.QueueFree();
@@ -660,7 +660,7 @@ public partial class GameView : Control
         AppendLog("[b]==== 局域网建主，等客户端加入 ====[/b]");
     }
 
-    private void StartLanClient()
+    public void StartLanClient()
     {
         if (State is null) return;
         _net?.QueueFree();
@@ -676,7 +676,7 @@ public partial class GameView : Control
     // ---- 自定义/示例卡牌（规格 §6/§7 可扩展；数据卡 + 代码卡）----
     private static readonly CardDef[] DealtCatalog = SampleCards.All.Concat(CodeCards.All).ToArray();
     private int _sampleIdx;
-    private void AddCustomCard()
+    public void AddCustomCard()
     {
         var c = ActiveCharacter;
         if (c is null || State is null) return;

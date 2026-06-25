@@ -3,63 +3,132 @@ using System.Linq;
 using Tongyuan.Core.Core;
 using Tongyuan.Core.Data;
 using Tongyuan.Core.Layout;
+using Tongyuan.Core.Roguelike;
+using Tongyuan.UI;
 using Tongyuan.Views;
 
 namespace Tongyuan;
 
 /// <summary>
-/// 主入口节点。P5：搭一个示例战场（4 角色模板 + 敌人 + 时间轴），绑定 GameView 渲染占位美术。
+/// UI 重置（规格 §3 路由）：屏幕路由器根节点。持 RunController，按当前节点类型切换子屏。
+/// 阶段0：战斗屏复用 GameView；Map/Shop/Rest/Event 占位（阶段4实现）。F1 呼出开发者面板。
+/// 子节点交换优于 ChangeScene，便于保留 LAN NetController 与跨屏状态。
 /// </summary>
 public partial class Main : Control
 {
-    private GameView? _view;
+    private Control? _screen;
+    private RunController? _run;
+    private Control? _devPanel;
+    private bool _devVisible;
 
     public override void _Ready()
     {
         SetAnchorsPreset(LayoutPreset.FullRect);
-        var state = BuildSampleBattle();
-        GD.Print($"[同渊] P5 示例战场就绪 | 角色={state.Characters.Count} 敌人={state.Enemies.Count} 时间轴={state.Timeline.Length} 指针={state.Pointer}");
-
-        _view = new GameView { State = state };
-        AddChild(_view);
+        Theme = UiPalette.BuildTheme(); // 全局 CJK SystemFont + 配色
+        BuildDevPanel();
+        StartRun();
         GetViewport().Connect("size_changed", Callable.From(ResizeView));
         ResizeView();
+    }
 
-        // 布局自检（无重叠 / 在视口内）——P5 截图矩形检查的确定性等价
-        int hand = state.Characters[0].Hand.Count;
-        var layout = BattleLayout.Compute(state.AliveCharacters.Count(), state.Enemies.Count, state.Timeline.Length, hand, state.Pointer);
-        GD.Print($"[同渊] 布局自检: 无重叠={layout.NoOverlaps()} 在视口内={layout.AllWithinViewport()}");
+    private void StartRun()
+    {
+        var map = MapGenerator.Generate(RunState.MapLayers, seed: 7);
+        _run = new RunController(new RunState { Map = map, Gold = 50 });
+        _run.Start();
+        Route();
+    }
+
+    /// <summary>按 RunController.CurrentType 切屏。</summary>
+    private void Route()
+    {
+        if (_screen is not null) { _screen.QueueFree(); _screen = null; }
+        var type = _run?.CurrentType ?? MapNodeType.Combat;
+        switch (type)
+        {
+            case MapNodeType.Combat:
+            case MapNodeType.Elite:
+            case MapNodeType.Boss:
+                var gs = BuildSampleBattle();
+                _screen = new GameView { State = gs };
+                GD.Print($"[同渊] 路由→战斗({type}) | 角色={gs.Characters.Count} 敌人={gs.Enemies.Count} 时间轴={gs.Timeline.Length}");
+                break;
+            default:
+                _screen = MakePlaceholder($"[{type}] 外壳屏待实现（阶段4）\n金币={_run?.State.Gold}", () =>
+                {
+                    _run?.Advance();
+                    Route();
+                });
+                GD.Print($"[同渊] 路由→{type}（占位）");
+                break;
+        }
+        AddChild(_screen);
+        ResizeView();
+    }
+
+    private static Control MakePlaceholder(string text, System.Action onAdvance)
+    {
+        var c = new Control();
+        c.SetAnchorsPreset(LayoutPreset.FullRect);
+        var vb = new VBoxContainer();
+        vb.OffsetLeft = 240; vb.OffsetTop = 260; vb.OffsetRight = 900; vb.OffsetBottom = 520;
+        var l = new Label { Text = text };
+        l.AddThemeFontSizeOverride("font_size", 22);
+        vb.AddChild(l);
+        var b = new Button { Text = "推进到下一节点", CustomMinimumSize = new Vector2(200, 44) };
+        b.Pressed += onAdvance;
+        vb.AddChild(b);
+        c.AddChild(vb);
+        return c;
+    }
+
+    public override void _Input(InputEvent e)
+    {
+        if (e is InputEventKey k && k.Pressed && !k.Echo && k.Keycode == Key.F1)
+        {
+            _devVisible = !_devVisible;
+            if (_devPanel is not null) _devPanel.Visible = _devVisible;
+        }
+    }
+
+    // ---- F1 开发者面板：LAN/加自定义卡 收纳于此，不进主 chrome ----
+    private void BuildDevPanel()
+    {
+        _devPanel = new Control { Visible = false };
+        _devPanel.SetAnchorsPreset(LayoutPreset.TopRight);
+        var p = new PanelContainer { CustomMinimumSize = new Vector2(260, 0) };
+        p.OffsetRight = 260; p.OffsetBottom = 240;
+        var vb = new VBoxContainer();
+        vb.AddThemeConstantOverride("separation", 6);
+        vb.AddChild(new Label { Text = "F1 开发者面板" });
+        var b1 = new Button { Text = "新局" }; b1.Pressed += StartRun; vb.AddChild(b1);
+        var b2 = new Button { Text = "LAN 建主" }; b2.Pressed += () => (_screen as GameView)?.StartLanHost(); vb.AddChild(b2);
+        var b3 = new Button { Text = "LAN 加入" }; b3.Pressed += () => (_screen as GameView)?.StartLanClient(); vb.AddChild(b3);
+        var b4 = new Button { Text = "加自定义卡" }; b4.Pressed += () => (_screen as GameView)?.AddCustomCard(); vb.AddChild(b4);
+        var b5 = new Button { Text = "推进节点(调试)" }; b5.Pressed += () => { _run?.Advance(); Route(); }; vb.AddChild(b5);
+        p.AddChild(vb);
+        _devPanel.AddChild(p);
+        AddChild(_devPanel);
     }
 
     private void ResizeView()
     {
-        if (_view is null || !IsInstanceValid(_view)) return;
-        _view.ResizeTo(GetViewport().GetVisibleRect().Size);
+        var size = GetViewport().GetVisibleRect().Size;
+        if (_screen is GameView gv) gv.ResizeTo(size);
+        else if (_screen is Control c) { c.Size = size; c.Position = Vector2.Zero; }
     }
 
     public static GameState BuildSampleBattle()
     {
         var tl = new Timeline();
         for (int i = 0; i < 6; i++) tl.Nodes.Add(NodeType.Empty);
-        // 敌人各带差异化行动链（链尽循环，不无限增长）
         var slash = new Enemy { Id = 1, Name = "斩击兵", Kind = EnemyKind.Slash, Power = 5, NodeSlot = 2, Hp = 20 };
-        slash.ActionChain.AddRange(new EnemyAction[] {
-            new EnemyAction.Attack(5, 1),                 // 斩位1
-        });
+        slash.ActionChain.AddRange(new EnemyAction[] { new EnemyAction.Attack(5, 1) });
         var thrust = new Enemy { Id = 2, Name = "突刺兵", Kind = EnemyKind.Thrust, Power = 4, NodeSlot = 4, Hp = 18 };
-        thrust.ActionChain.AddRange(new EnemyAction[] {
-            new EnemyAction.Charge(2),                   // 蓄力示警
-            new EnemyAction.Attack(4, 2),                 // 突位2（含蓄力）
-            new EnemyAction.Idle(),                       // 喘息
-        });
+        thrust.ActionChain.AddRange(new EnemyAction[] { new EnemyAction.Charge(2), new EnemyAction.Attack(4, 2), new EnemyAction.Idle() });
         var striker = new Enemy { Id = 3, Name = "重锤兵", Kind = EnemyKind.Strike, Power = 3, NodeSlot = 5, Hp = 26 };
-        striker.ActionChain.AddRange(new EnemyAction[] {
-            new EnemyAction.Charge(3),
-            new EnemyAction.Attack(3, -1),                // 打全体（含蓄力）
-        });
-        tl.Enemies.Add(slash);
-        tl.Enemies.Add(thrust);
-        tl.Enemies.Add(striker);
+        striker.ActionChain.AddRange(new EnemyAction[] { new EnemyAction.Charge(3), new EnemyAction.Attack(3, -1) });
+        tl.Enemies.Add(slash); tl.Enemies.Add(thrust); tl.Enemies.Add(striker);
         slash.Position = 1; thrust.Position = 2; striker.Position = 3;
 
         var gs = new GameState(seed: 7) { Timeline = tl };
@@ -67,12 +136,16 @@ public partial class Main : Control
         foreach (var tpl in CharacterTemplates.All())
         {
             var c = CharacterTemplates.Instantiate(tpl, position: pos);
-            // 各抽 3 张到手牌用于展示
             c.Draw(3, gs.Rng);
             gs.Characters.Add(c);
             pos++;
         }
         gs.ContractPositions();
+
+        // 布局自检（规格验证清单 #2）
+        int hand = gs.Characters[0].Hand.Count;
+        var layout = BattleLayout.Compute(gs.AliveCharacters.Count(), gs.Enemies.Count, gs.Timeline.Length, hand, gs.Pointer);
+        GD.Print($"[同渊] 布局自检: 无重叠={layout.NoOverlaps()} 在视口内={layout.AllWithinViewport()}");
         return gs;
     }
 }

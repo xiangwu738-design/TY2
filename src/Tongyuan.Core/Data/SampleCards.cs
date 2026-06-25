@@ -18,10 +18,10 @@ public static class SampleCards
             .WithDesc("穿刺位2，7伤（位2无人则落空）").Build(),
 
         new CardBuilder("smp_blunt", "横扫千军").Attack(DamageType.Blunt, 4, cost: 3)
-            .WithDesc("打击全体，每敌4伤").Build(),
+            .WithDesc("打击全体，每敌4伤").Rarity(Rarity.Rare).Build(),
 
         new CardBuilder("smp_ranged", "狙击").Attack(DamageType.Ranged, 8, cost: 2)
-            .WithDesc("远程自选敌，8伤，不位移").Build(),
+            .WithDesc("远程自选敌，8伤，不位移").Rarity(Rarity.Rare).Build(),
 
         new CardBuilder("smp_ranged_fast", "速射").Attack(DamageType.Ranged, 3, cost: 1)
             .WithDesc("远程自选敌，3伤，速射").Build(),

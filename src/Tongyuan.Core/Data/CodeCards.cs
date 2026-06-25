@@ -69,6 +69,7 @@ public static class CodeCards
             .Attack(DamageType.Blunt, 9, cost: 3)
             .WithDesc("全体9伤，自身受5反伤（代码卡）")
             .WithCustomEffect(new SelfDestructEffect { SelfDamage = 5 })
+            .Rarity(Rarity.Rare)
             .Build(),
 
         new CardBuilder("code_snipe", "精准狙击")

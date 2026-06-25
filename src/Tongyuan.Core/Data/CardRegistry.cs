@@ -72,5 +72,8 @@ public sealed class CardBuilder
     /// <summary>代码卡需要玩家点选敌人目标。</summary>
     public CardBuilder NeedsTargetEnemy() { _d.NeedsTargetEnemy = true; return this; }
 
+    /// <summary>稀有度（卡框边色）。</summary>
+    public CardBuilder Rarity(Rarity r) { _d.Rarity = r; return this; }
+
     public CardDef Build() => _d;
 }
