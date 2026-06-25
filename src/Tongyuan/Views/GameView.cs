@@ -25,6 +25,10 @@ public partial class GameView : Control
     private Card? _targetingCard;
     private int _targetingCharId;
 
+    // 立绘状态机：按 id 查找，Play 后喂事件驱动动画
+    private readonly Dictionary<int, PortraitController> _charPortraits = new();
+    private readonly Dictionary<int, PortraitController> _enemyPortraits = new();
+
     private Label _topLabel = null!;
     private HBoxContainer _battleField = null!;
     private HBoxContainer _timelineRow = null!;
@@ -199,6 +203,8 @@ public partial class GameView : Control
     private void RenderBattleField()
     {
         ClearChildren(_battleField);
+        _charPortraits.Clear();
+        _enemyPortraits.Clear();
         var alive = State!.AliveCharacters.OrderByDescending(c => c.Position).ToList();
         foreach (var c in alive)
             _battleField.AddChild(MakePortrait(c, c.Id == _activeId));
@@ -215,7 +221,7 @@ public partial class GameView : Control
     {
         var p = new Button
         {
-            CustomMinimumSize = new Vector2(108, 92),
+            CustomMinimumSize = new Vector2(108, 110),
             Text = $"{(isActive ? "▶ " : "")}{c.Name}\n位{c.Position}\nHP {c.Hp}/{c.MaxHp}",
             Disabled = !c.IsAlive,
         };
@@ -232,6 +238,19 @@ public partial class GameView : Control
         p.AddThemeStyleboxOverride("hover", sb);
         p.AddThemeStyleboxOverride("pressed", sb);
         p.AddThemeStyleboxOverride("disabled", sb);
+
+        // 立绘状态机（规格 §4.8）：挂为子节点，按角色 id 绑定；事件驱动动画
+        var portrait = new PortraitController
+        {
+            BoundCharacterId = c.Id,
+            DrawW = 44, DrawH = 50,
+            Position = new Vector2(54, 28),
+            IdleBreath = c.IsAlive,
+        };
+        if (!c.IsAlive) portrait.ToDown();
+        p.AddChild(portrait);
+        _charPortraits[c.Id] = portrait;
+
         int id = c.Id;
         p.Pressed += () => { _activeId = id; Render(); };
         return p;
@@ -255,6 +274,7 @@ public partial class GameView : Control
             csb.SetBorderWidthAll(3); csb.SetCornerRadiusAll(4);
             btn.AddThemeStyleboxOverride("normal", csb);
             btn.AddThemeStyleboxOverride("hover", csb);
+            AttachEnemyPortrait(e, btn);
             int eid = e.Id;
             btn.Pressed += () => PlayCardAtEnemy(eid);
             return btn;
@@ -293,7 +313,23 @@ public partial class GameView : Control
             cl.AddThemeFontSizeOverride("font_size", 10);
             vb.AddChild(cl);
         }
+        AttachEnemyPortrait(e, p);
         return p;
+    }
+
+    /// <summary>给敌人块挂立绘状态机（顶部小色块，按 id 绑定）。</summary>
+    private void AttachEnemyPortrait(Enemy e, Control parent)
+    {
+        var portrait = new PortraitController
+        {
+            BoundEnemyId = e.Id,
+            DrawW = 30, DrawH = 30,
+            Position = new Vector2(20, 18),
+            IdleBreath = e.IsAlive,
+        };
+        if (!e.IsAlive) portrait.ToDown();
+        parent.AddChild(portrait);
+        _enemyPortraits[e.Id] = portrait;
     }
 
     /// <summary>敌人下一步行动的意图文本（受击模式差异化展示）。</summary>
@@ -529,6 +565,17 @@ public partial class GameView : Control
         _hoverAction = null;
         _hoverEvents = null;
         Render();
+        AnimatePortraits(ev); // 立绘状态机：事件驱动技能/受击/倒下动画（异步，不阻塞 Core）
+    }
+
+    /// <summary>把事件流喂给各立绘（每 PortraitController.OnEvent 按 id 过滤，只响应自身）。</summary>
+    private void AnimatePortraits(List<GameEvent> ev)
+    {
+        foreach (var e in ev)
+        {
+            foreach (var p in _charPortraits.Values) p.OnEvent(e);
+            foreach (var p in _enemyPortraits.Values) p.OnEvent(e);
+        }
     }
 
     private void Hover(PlayerAction action)
