@@ -243,7 +243,9 @@ public partial class GameView : Control
         var arrow = new Label { Text = "⚔" };
         arrow.AddThemeFontSizeOverride("font_size", 20);
         _battleField.AddChild(arrow);
-        foreach (var e in State.Enemies)
+        // 敌方占位规则与我方对称：只渲染存活敌人、按 Position 1..N 排开；
+        // 死亡者由 Core.ContractEnemyPositions 自动收缩，UI 即"死一个少一个"，不留空位。
+        foreach (var e in State.Enemies.Where(e => e.IsAlive).OrderBy(e => e.Position))
             _battleField.AddChild(MakeEnemyBlock(e, _targetMode == TargetMode.Enemy));
     }
 
