@@ -15,6 +15,8 @@ public sealed class Character
     public int Position { get; set; } // 1..N，1=前线
     public bool IsDown { get; set; } // 被击倒：本场临时 debuff（弱而不废）
     public int DamageTakenThisFight { get; set; } // 本场累计受伤（结算下调上限用）
+    /// <summary>立绘美术占位口（null=占位色块）。规格 §6：美术后填。</summary>
+    public string? PortraitArt { get; set; }
 
     public Card PrepCard { get; init; } = null!;      // 固定整备牌，常驻手牌
     public List<Card> Hand { get; } = new();          // 抽到的牌（不含整备）

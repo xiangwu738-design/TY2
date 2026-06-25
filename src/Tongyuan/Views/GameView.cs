@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Tongyuan.Core.Core;
+using Tongyuan.Core.Data;
+using Tongyuan.Net;
 
 namespace Tongyuan.Views;
 
@@ -28,6 +30,12 @@ public partial class GameView : Control
     // 立绘状态机：按 id 查找，Play 后喂事件驱动动画
     private readonly Dictionary<int, PortraitController> _charPortraits = new();
     private readonly Dictionary<int, PortraitController> _enemyPortraits = new();
+
+    // 局域网联机
+    private NetController? _net;
+    private bool _isClient;
+    private LineEdit? _ipEdit;
+    private Label? _netLabel;
 
     private Label _topLabel = null!;
     private HBoxContainer _battleField = null!;
@@ -95,6 +103,26 @@ public partial class GameView : Control
         var nb = new Button { Text = "新局" };
         nb.Pressed += Restart;
         topbar.AddChild(nb);
+
+        // 局域网联机
+        topbar.AddChild(new Label { Text = "IP:" });
+        _ipEdit = new LineEdit { Text = "127.0.0.1", CustomMinimumSize = new Vector2(120, 0) };
+        topbar.AddChild(_ipEdit);
+        var hostBtn = new Button { Text = "建主(LAN)" };
+        hostBtn.Pressed += StartLanHost;
+        topbar.AddChild(hostBtn);
+        var joinBtn = new Button { Text = "加入(LAN)" };
+        joinBtn.Pressed += StartLanClient;
+        topbar.AddChild(joinBtn);
+        _netLabel = new Label { Text = "[离线]" };
+        _netLabel.AddThemeColorOverride("font_color", Colors.DimGray);
+        topbar.AddChild(_netLabel);
+
+        // 自定义卡牌（注册一张示例自定义卡并加入当前手牌）
+        var customBtn = new Button { Text = "加自定义卡" };
+        customBtn.Pressed += AddCustomCard;
+        topbar.AddChild(customBtn);
+
         vb.AddChild(topbar);
 
         // 战场
@@ -370,14 +398,15 @@ public partial class GameView : Control
     {
         ClearChildren(_timelineRow);
         if (State is null) return;
-        int start = Mathf.Max(0, State.Pointer);
+        int len = State.Timeline.Length;
+        int start = State.Pointer;
         var trav = TraversedSet();
         var trig = TriggeredPreviewSet();
         var pcolor = PreviewColor();
-        for (int i = 0; i < 12; i++)
+        int show = Math.Min(12, len);
+        for (int i = 0; i < show; i++)
         {
-            int cell = start + i;
-            if (cell >= State.Timeline.Length) break;
+            int cell = (start + i) % len; // 时间轴循环
             _timelineRow.AddChild(MakeCell(cell, trav, trig, pcolor));
         }
     }
@@ -491,11 +520,21 @@ public partial class GameView : Control
         string typeTag = def.Type == CardType.Attack ? CardDef.DamageText(def.DamageType) : def.Type.ToString();
         var btn = new Button
         {
-            Text = $"{def.Name}·{typeTag}\n占{def.Cost}｜{def.EffectDescription()}",
-            CustomMinimumSize = new Vector2(150, 56),
+            Text = $"〔{typeTag}〕{def.Name}\n占{def.Cost}｜{def.EffectDescription()}",
+            CustomMinimumSize = new Vector2(168, 92),
             ClipText = true,
+            Alignment = HorizontalAlignment.Center,
         };
         btn.AddThemeFontSizeOverride("font_size", 11);
+        // 按类型着色（卡牌化；美术资源后填 ArtPath 时此处替换为卡面图）
+        var sb = new StyleBoxFlat { BgColor = CardBgColor(def), BorderColor = CardAccentColor(def) };
+        sb.SetBorderWidthAll(2); sb.SetCornerRadiusAll(6);
+        sb.ContentMarginLeft = 4; sb.ContentMarginTop = 4; sb.ContentMarginRight = 4; sb.ContentMarginBottom = 4;
+        btn.AddThemeStyleboxOverride("normal", sb);
+        var hov = new StyleBoxFlat { BgColor = CardBgColor(def).Lightened(0.12f), BorderColor = Colors.White };
+        hov.SetBorderWidthAll(2); hov.SetCornerRadiusAll(6);
+        btn.AddThemeStyleboxOverride("hover", hov);
+
         var action = ActionForCard(c, card);
         btn.MouseEntered += () => Hover(action);
         btn.MouseExited += ClearHover;
@@ -507,9 +546,27 @@ public partial class GameView : Control
         return btn;
     }
 
-    /// <summary>需要玩家点选目标的牌：攻击（选敌）、力量附魔·具体牌（选手牌）。</summary>
+    private static Color CardBgColor(CardDef def) => def.Type switch
+    {
+        CardType.Attack => def.DamageType switch
+        {
+            DamageType.Ranged => new Color(0.18f, 0.22f, 0.30f),
+            DamageType.Blunt => new Color(0.26f, 0.16f, 0.14f),
+            DamageType.Thrust => new Color(0.20f, 0.18f, 0.28f),
+            _ => new Color(0.24f, 0.14f, 0.14f),
+        },
+        CardType.Defense => new Color(0.14f, 0.20f, 0.26f),
+        CardType.Skill => new Color(0.22f, 0.16f, 0.26f),
+        _ => new Color(0.16f, 0.22f, 0.18f),
+    };
+    private static Color CardAccentColor(CardDef def) => def.Type == CardType.Attack
+        ? (def.DamageType == DamageType.Ranged ? new Color(0.5f, 0.8f, 1f) : new Color(0.9f, 0.5f, 0.4f))
+        : new Color(0.6f, 0.7f, 0.85f);
+
+    /// <summary>需要玩家点选目标的牌：远程攻击（自选敌）、力量附魔·具体牌（选手牌）。
+    /// 近战（打击/斩击/突刺）固定自动锁定首个敌（规格：仅远程自选）。</summary>
     private static bool NeedsTarget(CardDef def) =>
-        def.Effect == EffectKind.AttackDamage
+        (def.Effect == EffectKind.AttackDamage && def.DamageType == DamageType.Ranged)
         || (def.Effect == EffectKind.ApplyEnchantment && def.EnchantType == EnchantmentType.Power && def.EnchantScope == EnchantmentScope.SpecificCard);
 
     private void BeginTargeting(int charId, Card card)
@@ -560,12 +617,94 @@ public partial class GameView : Control
     private void Play(PlayerAction action)
     {
         if (State is null || IsBattleOver()) return;
+
+        // 客户端：发主机，不本地结算（主机权威）；等广播回来自动重渲染
+        if (_net is not null && _isClient) { _net.SubmitAction(action); return; }
+
+        // 主机 / 离线：本地权威结算
         var ev = State.Apply(action);
         LogEvents(ev);
         _hoverAction = null;
         _hoverEvents = null;
+        _targetMode = TargetMode.None;
+        _targetingCard = null;
         Render();
-        AnimatePortraits(ev); // 立绘状态机：事件驱动技能/受击/倒下动画（异步，不阻塞 Core）
+        AnimatePortraits(ev);   // 立绘状态机协同
+        PlayCardAnimation(action); // 出牌动画
+        if (_net is not null && !_isClient) _net.Broadcast(action); // 主机广播
+    }
+
+    /// <summary>客户端/主机收到远端动作后：用最新状态重渲染 + 日志 + 立绘动画。</summary>
+    private void OnNetApplied()
+    {
+        if (_net?.State is not null) State = _net.State; // 客户端快照重放后切换到权威状态
+        if (State is null) return;
+        LogEvents(State.Events);
+        AnimatePortraits(State.Events);
+        _netLabel!.Text = _isClient ? "[已加入·同步]" : "[建主·端口" + NetController.DefaultPort + "]";
+        Render();
+    }
+
+    // ---- 局域网联机 ----
+    private void StartLanHost()
+    {
+        if (State is null) return;
+        _net?.QueueFree();
+        _net = new NetController();
+        _net.ActionApplied += OnNetApplied;
+        AddChild(_net);
+        _net.StartHost(NetController.DefaultPort, State);
+        _isClient = false;
+        _netLabel!.Text = "[建主·端口" + NetController.DefaultPort + "]";
+        AppendLog("[b]==== 局域网建主，等客户端加入 ====[/b]");
+    }
+
+    private void StartLanClient()
+    {
+        if (State is null) return;
+        _net?.QueueFree();
+        _net = new NetController();
+        _net.ActionApplied += OnNetApplied;
+        AddChild(_net);
+        _net.StartClient(_ipEdit?.Text ?? "127.0.0.1", NetController.DefaultPort, State.Seed);
+        _isClient = true;
+        _netLabel!.Text = "[加入中…]";
+        AppendLog("[b]==== 加入局域网 ====[/b]");
+    }
+
+    // ---- 自定义卡牌（规格 §6/§7 可扩展）----
+    private int _customSeq;
+    private void AddCustomCard()
+    {
+        var c = ActiveCharacter;
+        if (c is null || State is null) return;
+        var def = new CardBuilder($"custom_{++_customSeq}", "自定义·裂空斩")
+            .Attack(DamageType.Slash, 9, cost: 2)
+            .WithDesc("自定义示例：斩击 9 伤")
+            .Build();
+        c.Hand.Add(new Card { Def = def });
+        AppendLog($"[color=#80ff80]✦ 加入自定义卡：{def.Name}（{def.EffectDescription()}）[/color]");
+        Render();
+    }
+
+    // ---- 出牌动画：中央卡牌代理缩放+上浮+淡出（Tween，不阻塞 Core）----
+    private void PlayCardAnimation(PlayerAction action)
+    {
+        var size = GetViewport().GetVisibleRect().Size;
+        var proxy = new Panel { CustomMinimumSize = new Vector2(90, 120) };
+        var sb = new StyleBoxFlat { BgColor = new Color(0.95f, 0.78f, 0.2f, 0.92f), BorderColor = Colors.White };
+        sb.SetCornerRadiusAll(6); sb.SetBorderWidthAll(2);
+        proxy.AddThemeStyleboxOverride("panel", sb);
+        proxy.PivotOffset = new Vector2(45, 60);
+        proxy.Position = new Vector2(size.X / 2f - 45, size.Y / 2f - 60);
+        proxy.Scale = new Vector2(0.3f, 0.3f);
+        AddChild(proxy);
+        var tw = CreateTween();
+        tw.TweenProperty(proxy, "scale", Vector2.One, 0.12).SetTrans(Tween.TransitionType.Back);
+        tw.Parallel().TweenProperty(proxy, "position:y", size.Y / 2f - 90, 0.20);
+        tw.TweenInterval(0.10);
+        tw.TweenProperty(proxy, "modulate:a", 0f, 0.18);
+        tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(proxy)) proxy.QueueFree(); }));
     }
 
     /// <summary>把事件流喂给各立绘（每 PortraitController.OnEvent 按 id 过滤，只响应自身）。</summary>
@@ -618,11 +757,13 @@ public partial class GameView : Control
         _previewLabel.RemoveThemeColorOverride("font_color");
         var c = State?.Characters.Find(x => x.Id == a.CharacterId);
         int occ = ActionCost(a);
+        int len = State?.Timeline.Length ?? 1;
+        int dest = len > 0 ? (State!.Pointer + occ) % len : State!.Pointer + occ;
         string head = a.Type switch
         {
-            ActionType.PlayCard => $"{(c?.Hand.Find(card => card.InstanceId == a.CardInstanceId)?.Def.Name ?? "牌")} · 占{occ}→格{State!.Pointer + occ}",
-            ActionType.UsePrep => $"{c?.PrepCard?.Def.Name} · 占{occ}→格{State!.Pointer + occ}（回手·抽{c?.PrepCard?.Def.Magnitude}）",
-            ActionType.Skip => $"空过 · →格{State!.Pointer + occ}",
+            ActionType.PlayCard => $"{(c?.Hand.Find(card => card.InstanceId == a.CardInstanceId)?.Def.Name ?? "牌")} · 占{occ}→格{dest}",
+            ActionType.UsePrep => $"{c?.PrepCard?.Def.Name} · 占{occ}→格{dest}（回手·抽{c?.PrepCard?.Def.Magnitude}）",
+            ActionType.Skip => $"空过 · →格{dest}",
             _ => "",
         };
         var parts = new List<string> { head };
@@ -671,7 +812,9 @@ public partial class GameView : Control
         var d = new HashSet<int>();
         if (_hoverAction is not PlayerAction a || State is null) return d;
         int occ = ActionCost(a);
-        for (int i = 1; i <= occ; i++) d.Add(State.Pointer + i);
+        int len = State.Timeline.Length;
+        if (len <= 0) return d;
+        for (int i = 1; i <= occ; i++) d.Add((State.Pointer + i) % len); // 循环
         return d;
     }
 
@@ -681,9 +824,11 @@ public partial class GameView : Control
         if (_hoverEvents is null) return d;
         if (_hoverAction is not PlayerAction a || State is null) return d;
         int occ = ActionCost(a);
+        int len = State.Timeline.Length;
+        if (len <= 0) return d;
         for (int i = 1; i <= occ; i++)
         {
-            int slot = State.Pointer + i;
+            int slot = (State.Pointer + i) % len; // 循环
             var en = State.Timeline.EnemyAt(slot);
             if (en is not null && en.IsAlive) d.Add(slot);
         }

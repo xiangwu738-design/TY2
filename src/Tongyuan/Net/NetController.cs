@@ -70,6 +70,13 @@ public partial class NetController : Node
         EmitSignal(SignalName.ActionApplied);
     }
 
+    /// <summary>主机广播一个已本地结算的动作给所有客户端（不重复结算、不触发本机信号）。</summary>
+    public void Broadcast(PlayerAction action)
+    {
+        if (!IsHost) return;
+        Rpc(MethodName.BroadcastAction, ActionCodec.Serialize(action));
+    }
+
     // ---- 中途加入：主机发 seed + 历史动作，客户端重放追平 ----
     private void OnPeerConnected(long id)
     {
@@ -96,5 +103,6 @@ public partial class NetController : Node
             State.Apply(ActionCodec.Deserialize(parts[i]));
         }
         GD.Print($"[Net] snapshot applied: seed={seed} actions={parts.Length - 1} pointer={State.Pointer}");
+        EmitSignal(SignalName.ActionApplied); // 通知 GameView 用新状态重渲染
     }
 }

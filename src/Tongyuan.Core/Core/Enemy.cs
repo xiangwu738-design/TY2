@@ -12,8 +12,11 @@ public sealed class Enemy
     public int Power { get; set; }       // 基础伤害
     public int Charge { get; set; }      // 蓄力层数（敌力+1）
     public int NodeSlot { get; init; }   // 所在时间轴格
+    public int Position { get; set; } = 1; // 敌方位置线 1..M（1=前线，与角色位置对称）
     public int Hp { get; set; }
     public bool IsAlive => Hp > 0;
+    /// <summary>立绘美术占位口（null=占位色块）。规格 §6：美术后填。</summary>
+    public string? PortraitArt { get; set; }
 
     /// <summary>敌人身上的持续状态（如易伤），来自附魔牌。</summary>
     public List<Enchantment> Statuses { get; } = new();
@@ -76,6 +79,7 @@ public sealed class Enemy
             Charge = Charge,
             NodeSlot = NodeSlot,
             Hp = Hp,
+            Position = Position,
             ChainIndex = ChainIndex,
         };
         foreach (var a in ActionChain) e.ActionChain.Add(a); // 行动链是 record，不可变，浅拷贝即可

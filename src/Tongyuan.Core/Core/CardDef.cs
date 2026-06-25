@@ -17,25 +17,28 @@ public sealed class CardDef
 {
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
-    public CardType Type { get; init; }
-    public int Cost { get; init; } // 占位=推进格数=时间成本
+    public CardType Type { get; set; }
+    public int Cost { get; set; } // 占位=推进格数=时间成本
 
-    public EffectKind Effect { get; init; } = EffectKind.None;
-    public int Magnitude { get; init; } // 攻击伤害 / 抽牌数 / 附魔量
+    public EffectKind Effect { get; set; } = EffectKind.None;
+    public int Magnitude { get; set; } // 攻击伤害 / 抽牌数 / 附魔量
 
     /// <summary>攻击伤害类型（仅攻击牌）。远程=自选敌人且不位移。</summary>
-    public DamageType DamageType { get; init; } = DamageType.Slash;
+    public DamageType DamageType { get; set; } = DamageType.Slash;
 
     // 护盾参数
-    public ShieldType ShieldType { get; init; } = ShieldType.Fixed;
-    public int ShieldHits { get; init; } = 1; // 次数型：挡几次
+    public ShieldType ShieldType { get; set; } = ShieldType.Fixed;
+    public int ShieldHits { get; set; } = 1; // 次数型：挡几次
 
     // 附魔参数
-    public EnchantmentType EnchantType { get; init; } = EnchantmentType.Power;
-    public EnchantmentScope EnchantScope { get; init; } = EnchantmentScope.SpecificCard;
+    public EnchantmentType EnchantType { get; set; } = EnchantmentType.Power;
+    public EnchantmentScope EnchantScope { get; set; } = EnchantmentScope.SpecificCard;
 
     /// <summary>展示用描述（空则自动生成）。避免“描述模糊”。</summary>
-    public string Description { get; init; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>美术资源占位口（卡面图路径，null=用占位色块）。规格 §6：美术资源后填。</summary>
+    public string? ArtPath { get; set; }
 
     /// <summary>自动生成效果描述（UI 直接用）。</summary>
     public string EffectDescription()

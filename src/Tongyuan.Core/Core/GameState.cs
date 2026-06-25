@@ -97,15 +97,16 @@ public sealed class GameState
     /// <summary>
     /// 推进 cost 格，逐格结算：进格→①敌人节点→②护盾检查；
     /// 若 settleEndpoint 且当前是终点（最后一格），结算牌效果（③）。
+    /// 时间轴循环（规格：行动条理论可无限→用循环）：到头绕回 0，敌人节点每轮重触发、行动链随之循环。
     /// </summary>
     private void AdvanceAndSettle(Character ch, int cost, bool settleEndpoint,
         Card? endpointCard = null, PlayerAction? action = null)
     {
+        if (Timeline.Length == 0) return;
         for (int step = 1; step <= cost; step++)
         {
-            if (Timeline.AtEnd) break;
             int from = Timeline.Pointer;
-            Timeline.Pointer++;
+            Timeline.Pointer = (Timeline.Pointer + 1) % Timeline.Length; // 循环
             Events.Add(new GameEvent.PointerMoved(from, Timeline.Pointer));
             SettleEnemyAndShield(Timeline.Pointer);
             if (settleEndpoint && step == cost && endpointCard is not null)
@@ -213,23 +214,46 @@ public sealed class GameState
         }
     }
 
-    // 攻击：近战（打击/斩击/突刺）打出者移到位1（暴露）；远程不位移、自选敌（规格）。
+    // 攻击（伤害类型对称映射，双方相同：打击=全体 / 穿刺=位2 / 斩击=位1 / 远程=自选且不位移）。
     private void DoAttack(Character ch, Card card, PlayerAction? action)
     {
-        bool ranged = card.Def.DamageType == DamageType.Ranged;
-        if (!ranged) MoveToFront(ch);
-        if (action?.TargetEnemyId is int eid)
+        var dt = card.Def.DamageType;
+        bool ranged = dt == DamageType.Ranged;
+        if (!ranged) MoveToFront(ch); // 近战位移到位1（暴露）；远程不位移
+
+        var targets = new List<Enemy>();
+        switch (dt)
         {
-            var enemy = Enemies.Find(e => e.Id == eid);
-            if (enemy is not null && enemy.IsAlive)
-            {
-                int dmg = card.EffectiveAttack + enemy.ConsumeVulnerableBonus(); // 含力量附魔 + 敌人易伤
-                enemy.Hp -= dmg;
-                Events.Add(new GameEvent.DamageDealt(enemy.Id, TargetIsEnemy: true, dmg));
-                if (!enemy.IsAlive)
-                    Events.Add(new GameEvent.EnemyDied(enemy.Id));
-            }
+            case DamageType.Slash: var e1 = AliveEnemyAtPosition(1); if (e1 is not null) targets.Add(e1); break;
+            case DamageType.Thrust: var e2 = AliveEnemyAtPosition(2); if (e2 is not null) targets.Add(e2); break; // <2 落空
+            case DamageType.Blunt: targets.AddRange(Enemies.Where(e => e.IsAlive)); break;        // 打全体
+            case DamageType.Ranged:
+                if (action?.TargetEnemyId is int eid)
+                {
+                    var er = Enemies.Find(e => e.Id == eid);
+                    if (er is not null && er.IsAlive) targets.Add(er);
+                }
+                break;
         }
+
+        int baseDmg = card.EffectiveAttack; // 含力量附魔
+        foreach (var enemy in targets)
+        {
+            int dmg = baseDmg + enemy.ConsumeVulnerableBonus();
+            enemy.Hp -= dmg;
+            Events.Add(new GameEvent.DamageDealt(enemy.Id, TargetIsEnemy: true, dmg));
+            if (!enemy.IsAlive) Events.Add(new GameEvent.EnemyDied(enemy.Id));
+        }
+        if (targets.Any(t => !t.IsAlive)) ContractEnemyPositions();
+    }
+
+    private Enemy? AliveEnemyAtPosition(int pos) => Enemies.FirstOrDefault(e => e.IsAlive && e.Position == pos);
+
+    /// <summary>敌方阵亡收缩：保持敌人位置 1..M 连续（与角色位置对称）。</summary>
+    public void ContractEnemyPositions()
+    {
+        var alive = Enemies.Where(e => e.IsAlive).OrderBy(e => e.Position).ToList();
+        for (int i = 0; i < alive.Count; i++) alive[i].Position = i + 1;
     }
 
     // 防御：铺护盾，绑守护关系

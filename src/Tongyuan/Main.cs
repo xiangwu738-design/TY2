@@ -60,6 +60,7 @@ public partial class Main : Control
         tl.Enemies.Add(slash);
         tl.Enemies.Add(thrust);
         tl.Enemies.Add(striker);
+        slash.Position = 1; thrust.Position = 2; striker.Position = 3;
 
         var gs = new GameState(seed: 7) { Timeline = tl };
         int pos = 1;
