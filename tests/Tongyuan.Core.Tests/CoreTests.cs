@@ -148,9 +148,9 @@ public class CoreTests
         Assert.Empty(c1.DiscardPile);                  // 弃牌堆整叠移走
     }
 
-    // ---- 突=位2，N<2 时落空 ----
+    // ---- 突=位2，仅1人时改打前排（不落空） ----
     [Fact]
-    public void ThrustEnemy_MissesWhenSingleCharacter()
+    public void ThrustEnemy_HitsFrontWhenSingleCharacter()
     {
         var tl = GameStateFixture.TimelineOf(3);
         var enemy = GameStateFixture.Enemy(1, slot: 1, EnemyKind.Thrust, power: 10); // 打位2
@@ -160,6 +160,6 @@ public class CoreTests
 
         gs.Apply(new PlayerAction(1, ActionType.Skip));
 
-        Assert.Equal(20, c1.Hp);                       // 位2无人，落空，不受伤
+        Assert.Equal(10, c1.Hp);                       // 位2无人→打前排，受 10 伤
     }
 }

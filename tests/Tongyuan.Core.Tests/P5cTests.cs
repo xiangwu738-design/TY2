@@ -61,9 +61,9 @@ public class P5cTests
         Assert.Equal(95, e3.Hp);
     }
 
-    // 穿刺：仅 1 敌时落空（位2 无人）
+    // 穿刺：仅 1 敌时改打前排（位2 无人→位1，不落空）
     [Fact]
-    public void Thrust_MissesWhenSingleEnemy()
+    public void Thrust_HitsFrontWhenSingleEnemy()
     {
         var tl = GameStateFixture.TimelineOf(3);
         var e1 = new Enemy { Id = 1, Kind = EnemyKind.Slash, Power = 99, NodeSlot = 1, Hp = 100, Position = 1 };
@@ -73,7 +73,7 @@ public class P5cTests
         var card = GameStateFixture.Card(Atk(DamageType.Thrust));
         c.Hand.Add(card);
         gs.Apply(new PlayerAction(1, ActionType.PlayCard, card.InstanceId));
-        Assert.Equal(100, e1.Hp); // 落空
+        Assert.Equal(95, e1.Hp); // 位2无人→打前排，受 5 伤
     }
 
     // 敌人阵亡收缩：保持 1..M 连续

@@ -144,7 +144,9 @@ public sealed class GameState
                 else
                 {
                     var t = Characters.Find(c => c.IsAlive && c.Position == targetPos);
-                    if (t is null) return; // 突=位2，N<2 落空
+                    if (t is null && targetPos > 1) // 突=位2，不足2人打前排（不落空）
+                        t = Characters.Find(c => c.IsAlive && c.Position == 1);
+                    if (t is null) return;
                     ApplyEnemyHit(enemy, t, dmg);
                 }
                 break;
@@ -232,7 +234,10 @@ public sealed class GameState
         switch (dt)
         {
             case DamageType.Slash: var e1 = AliveEnemyAtPosition(1); if (e1 is not null) targets.Add(e1); break;
-            case DamageType.Thrust: var e2 = AliveEnemyAtPosition(2); if (e2 is not null) targets.Add(e2); break; // <2 落空
+            case DamageType.Thrust:
+                var e2 = AliveEnemyAtPosition(2) ?? AliveEnemyAtPosition(1); // 突=次排，不足2人打前排（不落空）
+                if (e2 is not null) targets.Add(e2);
+                break;
             case DamageType.Blunt: targets.AddRange(Enemies.Where(e => e.IsAlive)); break;        // 打全体
             case DamageType.Ranged:
                 if (action?.TargetEnemyId is int eid)
