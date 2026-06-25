@@ -17,6 +17,7 @@ namespace Tongyuan.Views;
 /// </summary>
 public partial class GameView : Control
 {
+    [Signal] public delegate void BattleOverEventHandler(bool win);
     public GameState? State { get; set; }
     private int _activeId;
     private PlayerAction? _hoverAction;
@@ -619,6 +620,7 @@ public partial class GameView : Control
         AnimatePortraits(ev);   // 立绘状态机协同
         PlayCardAnimation(action); // 出牌动画
         if (_net is not null && !_isClient) _net.Broadcast(action); // 主机广播
+        if (IsBattleOver()) EmitSignal(SignalName.BattleOver, IsWin()); // 通知路由器
     }
 
     /// <summary>客户端/主机收到远端动作后：用最新状态重渲染 + 日志 + 立绘动画。</summary>

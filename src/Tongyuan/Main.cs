@@ -43,24 +43,61 @@ public partial class Main : Control
     private void Route()
     {
         if (_screen is not null) { _screen.QueueFree(); _screen = null; }
-        var type = _run?.CurrentType ?? MapNodeType.Combat;
+        if (_run is null) { StartRun(); return; }
+        if (_run.State.RunOver)
+        {
+            _screen = MakePlaceholder(_run.State.Victory ? "🏆 通关！" : "💀 失败", StartRun);
+            AddChild(_screen); ResizeView(); return;
+        }
+        var type = _run.CurrentType;
         switch (type)
         {
             case MapNodeType.Combat:
             case MapNodeType.Elite:
             case MapNodeType.Boss:
                 var gs = BuildSampleBattle();
-                _screen = new GameView { State = gs };
-                GD.Print($"[同渊] 路由→战斗({type}) | 角色={gs.Characters.Count} 敌人={gs.Enemies.Count} 时间轴={gs.Timeline.Length}");
+                var gv = new GameView { State = gs };
+                gv.BattleOver += OnBattleOver;
+                _screen = gv;
+                GD.Print($"[同渊] 路由→战斗({type}) | 角色={gs.Characters.Count} 敌人={gs.Enemies.Count}");
+                break;
+            case MapNodeType.Shop:
+                _screen = new ShopScreen { Run = _run, OnLeave = () => { _run.Advance(); Route(); } };
+                GD.Print("[同渊] 路由→商店");
+                break;
+            case MapNodeType.Rest:
+                _screen = new RestScreen { Run = _run, OnDone = () => { _run.Advance(); Route(); } };
+                GD.Print("[同渊] 路由→休息");
+                break;
+            case MapNodeType.Event:
+                _screen = new EventScreen { Run = _run, OnDone = () => { _run.Advance(); Route(); } };
+                GD.Print("[同渊] 路由→事件");
                 break;
             default:
-                _screen = MakePlaceholder($"[{type}] 外壳屏待实现（阶段4）\n金币={_run?.State.Gold}", () =>
-                {
-                    _run?.Advance();
-                    Route();
-                });
-                GD.Print($"[同渊] 路由→{type}（占位）");
+                _screen = MakePlaceholder($"[{type}]", () => { _run.Advance(); Route(); });
                 break;
+        }
+        AddChild(_screen);
+        ResizeView();
+    }
+
+    /// <summary>战斗结束：胜→奖励(三选一)或通关；败→失败。延迟切换避免在信号里释放发射者。</summary>
+    private void OnBattleOver(bool win) => CallDeferred(MethodName.OnBattleOverDeferred, win);
+
+    private void OnBattleOverDeferred(Variant win)
+    {
+        bool w = (bool)win;
+        if (_run is null) return;
+        if (_screen is GameView gv) { gv.QueueFree(); _screen = null; }
+        if (w)
+        {
+            if (_run.CurrentType == MapNodeType.Boss) { _run.Advance(); Route(); return; }
+            _screen = new RewardScreen { Run = _run, OnPicked = () => { _run.Advance(); Route(); } };
+            GD.Print("[同渊] 路由→奖励(三选一)");
+        }
+        else
+        {
+            _screen = MakePlaceholder("💀 战败 — 新局", StartRun);
         }
         AddChild(_screen);
         ResizeView();
