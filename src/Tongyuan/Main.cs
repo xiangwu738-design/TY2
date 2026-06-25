@@ -26,8 +26,25 @@ public partial class Main : Control
         SetAnchorsPreset(LayoutPreset.FullRect);
         Theme = UiPalette.BuildTheme(); // 全局 CJK SystemFont + 配色
         BuildDevPanel();
-        StartRun();
+        ShowMenu();
         GetViewport().Connect("size_changed", Callable.From(ResizeView));
+        ResizeView();
+    }
+
+    private enum LanIntent { None, Host, Join }
+    private LanIntent _pendingLan = LanIntent.None;
+
+    private void ShowMenu()
+    {
+        if (_screen is not null) { _screen.QueueFree(); _screen = null; }
+        _run = null;
+        _screen = new MainMenuScreen
+        {
+            OnStart = () => { _pendingLan = LanIntent.None; StartRun(); },
+            OnStartHost = () => { _pendingLan = LanIntent.Host; StartRun(); },
+            OnStartJoin = () => { _pendingLan = LanIntent.Join; StartRun(); },
+        };
+        AddChild(_screen);
         ResizeView();
     }
 
@@ -59,6 +76,10 @@ public partial class Main : Control
                 var gv = new GameView { State = gs };
                 gv.BattleOver += OnBattleOver;
                 _screen = gv;
+                // 主菜单联机意图：进战斗后建主/加入
+                if (_pendingLan == LanIntent.Host) gv.StartLanHost();
+                else if (_pendingLan == LanIntent.Join) gv.StartLanClient();
+                _pendingLan = LanIntent.None;
                 GD.Print($"[同渊] 路由→战斗({type}) | 角色={gs.Characters.Count} 敌人={gs.Enemies.Count}");
                 break;
             case MapNodeType.Shop:

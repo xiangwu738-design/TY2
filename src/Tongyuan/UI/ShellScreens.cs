@@ -125,3 +125,40 @@ public partial class EventScreen : Control
         AddChild(vb);
     }
 }
+
+/// <summary>主菜单（UI 重置阶段5）：标题/开始/联机/设置/退出。</summary>
+public partial class MainMenuScreen : Control
+{
+    public Action? OnStart { get; set; }
+    public Action? OnStartHost { get; set; }
+    public Action? OnStartJoin { get; set; }
+
+    public override void _Ready()
+    {
+        SetAnchorsPreset(LayoutPreset.FullRect);
+        var vb = new VBoxContainer();
+        vb.OffsetLeft = 660; vb.OffsetTop = 240; vb.OffsetRight = 1260; vb.OffsetBottom = 840;
+        vb.AddThemeConstantOverride("separation", 18);
+        var title = new Label { Text = "《同渊》" };
+        title.AddThemeFontSizeOverride("font_size", 64);
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        vb.AddChild(title);
+        var sub = new Label { Text = "正式版 · 占位美术", HorizontalAlignment = HorizontalAlignment.Center };
+        sub.AddThemeColorOverride("font_color", new Color(0.7f, 0.72f, 0.78f));
+        vb.AddChild(sub);
+        vb.AddChild(MenuBtn("开始单局", () => OnStart?.Invoke()));
+        vb.AddChild(MenuBtn("联机·建主(局域网)", () => OnStartHost?.Invoke()));
+        vb.AddChild(MenuBtn("联机·加入(局域网)", () => OnStartJoin?.Invoke()));
+        vb.AddChild(MenuBtn("设置（占位）", null));
+        vb.AddChild(MenuBtn("退出", () => GetTree().Quit()));
+        AddChild(vb);
+    }
+
+    private static Button MenuBtn(string text, Action? act)
+    {
+        var b = new Button { Text = text, CustomMinimumSize = new Vector2(320, 50) };
+        if (act is not null) b.Pressed += () => act();
+        else b.Disabled = true;
+        return b;
+    }
+}
