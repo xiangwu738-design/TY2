@@ -672,18 +672,16 @@ public partial class GameView : Control
         AppendLog("[b]==== 加入局域网 ====[/b]");
     }
 
-    // ---- 自定义卡牌（规格 §6/§7 可扩展）----
-    private int _customSeq;
+    // ---- 自定义/示例卡牌（规格 §6/§7 可扩展）----
+    private int _sampleIdx;
     private void AddCustomCard()
     {
         var c = ActiveCharacter;
         if (c is null || State is null) return;
-        var def = new CardBuilder($"custom_{++_customSeq}", "自定义·裂空斩")
-            .Attack(DamageType.Slash, 9, cost: 2)
-            .WithDesc("自定义示例：斩击 9 伤")
-            .Build();
+        var def = SampleCards.All[_sampleIdx % SampleCards.All.Length];
+        _sampleIdx++;
         c.Hand.Add(new Card { Def = def });
-        AppendLog($"[color=#80ff80]✦ 加入自定义卡：{def.Name}（{def.EffectDescription()}）[/color]");
+        AppendLog($"[color=#80ff80]✦ 发示例卡：{def.Name}（{def.EffectDescription()}）[/color]");
         Render();
     }
 
