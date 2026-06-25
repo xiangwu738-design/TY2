@@ -157,16 +157,21 @@ public partial class GameView : Control
         _actionRow.AddThemeConstantOverride("separation", 6);
         vb.AddChild(_actionRow);
 
-        // 预览
-        var pp = new Panel { CustomMinimumSize = new Vector2(0, 56) };
-        pp.AddThemeStyleboxOverride("panel", PreviewStyle());
+        // 预览（文档 §五：数值预览替玩家算——放大加粗，暖金边框，醒目）
+        var pp = new Panel { CustomMinimumSize = new Vector2(0, 72) };
+        var pstyle = new StyleBoxFlat { BgColor = UiPalette.PanelBg, BorderColor = UiPalette.GoldBorder };
+        pstyle.SetBorderWidthAll(2); pstyle.SetCornerRadiusAll(6);
+        pstyle.BorderWidthTop = 3;
+        pstyle.ContentMarginLeft = 10; pstyle.ContentMarginTop = 6; pstyle.ContentMarginRight = 10; pstyle.ContentMarginBottom = 6;
+        pp.AddThemeStyleboxOverride("panel", pstyle);
         vb.AddChild(pp);
         _previewLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _previewLabel.AddThemeFontSizeOverride("font_size", 13);
+        _previewLabel.AddThemeFontSizeOverride("font_size", 17);
+        _previewLabel.AddThemeColorOverride("font_color", UiPalette.TextMain);
         _previewLabel.SetAnchorsPreset(LayoutPreset.FullRect);
-        _previewLabel.AddThemeConstantOverride("offset_left", 8);
-        _previewLabel.AddThemeConstantOverride("offset_right", -8);
-        _previewLabel.AddThemeConstantOverride("offset_top", 5);
+        _previewLabel.AddThemeConstantOverride("offset_left", 10);
+        _previewLabel.AddThemeConstantOverride("offset_right", -10);
+        _previewLabel.AddThemeConstantOverride("offset_top", 6);
         _previewLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         pp.AddChild(_previewLabel);
 
@@ -181,7 +186,14 @@ public partial class GameView : Control
         };
         _log.AddThemeFontSizeOverride("font_size", 12);
         vb.AddChild(_log);
+
+        // FX 层：伤害飘字等悬浮特效（置顶、不挡鼠标、跨 Render 持久）
+        _fxLayer = new Control { MouseFilter = MouseFilterEnum.Ignore };
+        _fxLayer.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(_fxLayer);
     }
+
+    private Control _fxLayer = null!;
 
     private static Label SectionLabel(string text)
     {
@@ -361,6 +373,16 @@ public partial class GameView : Control
             cl.AddThemeColorOverride("font_color", new Color(1f, 0.8f, 0.3f));
             cl.AddThemeFontSizeOverride("font_size", 10);
             vb.AddChild(cl);
+        }
+        // 易伤标记（附魔只读显示器，文档 §五）
+        int vuln = e.Statuses.Where(s => s.Type == EnchantmentType.Vulnerable).Sum(s => s.Magnitude);
+        int vulnTimes = e.Statuses.Where(s => s.Type == EnchantmentType.Vulnerable).Sum(s => s.Remaining);
+        if (vuln > 0)
+        {
+            var vl = new Label { Text = $"易伤+{vuln}×{vulnTimes}" };
+            vl.AddThemeColorOverride("font_color", UiPalette.VulnGold);
+            vl.AddThemeFontSizeOverride("font_size", 10);
+            vb.AddChild(vl);
         }
         AttachEnemyPortrait(e, p);
         return p;
@@ -718,19 +740,32 @@ public partial class GameView : Control
     /// <summary>把事件流喂给各立绘（每 PortraitController.OnEvent 按 id 过滤，只响应自身）。</summary>
     private void AnimatePortraits(List<GameEvent> ev)
     {
+        // 收集伤害事件，延迟到下一帧布局 settled 后按 GlobalPosition 生成飘字
         foreach (var e in ev)
         {
             foreach (var p in _charPortraits.Values) p.OnEvent(e);
             foreach (var p in _enemyPortraits.Values) p.OnEvent(e);
-            // 伤害数字上飘（文档 §七：受击 → 伤害数字上飘，扣血/护甲不同色）
             if (e is GameEvent.DamageDealt dd)
             {
                 var portrait = dd.TargetIsEnemy
                     ? (_enemyPortraits.TryGetValue(dd.TargetId, out var ep) ? ep : null)
                     : (_charPortraits.TryGetValue(dd.TargetId, out var cp) ? cp : null);
-                if (portrait is not null) SpawnDamageNumber(portrait.GlobalPosition, dd.Amount, dd.TargetIsEnemy);
+                if (portrait is not null) _pendingDmg.Add((portrait, dd.Amount, dd.TargetIsEnemy));
             }
         }
+        if (_pendingDmg.Count > 0) CallDeferred(MethodName.SpawnPendingDamageNumbers);
+    }
+
+    private readonly List<(PortraitController Portrait, int Amount, bool Enemy)> _pendingDmg = new();
+
+    private void SpawnPendingDamageNumbers()
+    {
+        foreach (var (portrait, amount, enemy) in _pendingDmg)
+        {
+            if (IsInstanceValid(portrait))
+                SpawnDamageNumber(portrait.GlobalPosition, amount, enemy);
+        }
+        _pendingDmg.Clear();
     }
 
     /// <summary>在 pos 处生成上飘+淡出的伤害数字（敌受击=暖金，角色受击=警示红，治疗负值=青白）。</summary>
@@ -740,15 +775,16 @@ public partial class GameView : Control
         var label = new Label
         {
             Text = heal ? $"+{-amount}" : amount.ToString(),
-            ZIndex = 50,
-            Position = pos + new Vector2(-12, -30),
+            ZIndex = 100,
+            Position = pos + new Vector2(-14, -40),
+            Size = new Vector2(60, 30),
         };
-        label.AddThemeFontSizeOverride("font_size", heal ? 18 : (amount >= 8 ? 24 : 18));
+        label.AddThemeFontSizeOverride("font_size", heal ? 20 : (amount >= 8 ? 28 : 22));
         label.AddThemeColorOverride("font_color", heal ? UiPalette.ShieldTeal : (targetIsEnemy ? UiPalette.VulnGold : UiPalette.WarnOrange));
-        AddChild(label);
+        _fxLayer.AddChild(label);
         var tw = CreateTween();
-        tw.TweenProperty(label, "position:y", label.Position.Y - 36, 0.5f).SetTrans(Tween.TransitionType.Cubic);
-        tw.Parallel().TweenProperty(label, "modulate:a", 0f, 0.6f).SetDelay(0.15f);
+        tw.TweenProperty(label, "position:y", label.Position.Y - 44, 0.55f).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        tw.Parallel().TweenProperty(label, "modulate:a", 0f, 0.7f).SetDelay(0.2f);
         tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(label)) label.QueueFree(); }));
     }
 
@@ -907,7 +943,7 @@ public partial class GameView : Control
             GameEvent.EnemyDied ed => $"    [color=#80ff80]敌 {EnemyName(ed.EnemyId)} 被击败[/color]",
             GameEvent.ShieldPlaced sp => $"    {CharName(sp.GuardianId)} 铺盾→{CharName(sp.ProtectedId)}",
             GameEvent.ShieldAbsorbed sa => $"    护盾吸收 {sa.Amount}{(sa.Exhausted ? "（耗尽）" : "")}",
-            GameEvent.EnchantmentApplied ea => $"    [color=#ffd070]✦ 附魔 {ea.Enchantment.Type}[/color]",
+            GameEvent.EnchantmentApplied ea => $"    [color=#ffd070]✦ 附魔 {EnchantName(ea.Enchantment.Type)} +{ea.Enchantment.Magnitude}{(ea.TargetEnemyId is not null ? " →敌" : ea.TargetCharacterId is not null ? " →角色" : " →牌")}[/color]",
             GameEvent.TurnEnded => "",
             _ => "",
         };
@@ -922,6 +958,14 @@ public partial class GameView : Control
         EnemyKind.Thrust => "突",
         EnemyKind.Strike => "打",
         _ => "?",
+    };
+
+    private static string EnchantName(EnchantmentType t) => t switch
+    {
+        EnchantmentType.Power => "力量",
+        EnchantmentType.Vulnerable => "易伤",
+        EnchantmentType.Charge => "蓄力",
+        _ => t.ToString(),
     };
 
     private static Color EnemyColor(EnemyKind k) => k switch

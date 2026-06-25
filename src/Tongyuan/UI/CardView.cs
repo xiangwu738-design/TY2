@@ -17,6 +17,7 @@ public partial class CardView : Panel
     public Action<CardView>? OnUnhovered;
 
     private Label _cost = null!;
+    private Label _enchant = null!;
     private ColorRect _art = null!;
     private Label _name = null!;
     private Label _type = null!;
@@ -51,6 +52,14 @@ public partial class CardView : Panel
         _cost.AddThemeFontSizeOverride("font_size", 18);
         _cost.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.3f));
         vb.AddChild(_cost);
+
+        // 附魔徽标（右上角，文档 §五：附魔要看得见）
+        _enchant = new Label { Text = "", ZIndex = 5 };
+        _enchant.SetAnchorsPreset(LayoutPreset.TopRight);
+        _enchant.OffsetLeft = -60; _enchant.OffsetTop = 6; _enchant.OffsetRight = -6;
+        _enchant.AddThemeFontSizeOverride("font_size", 14);
+        _enchant.AddThemeColorOverride("font_color", UiPalette.VulnGold);
+        AddChild(_enchant);
 
         // 卡图区（占位渐变/贴图槽）
         _art = new ColorRect { CustomMinimumSize = new Vector2(0, 96) };
@@ -91,6 +100,9 @@ public partial class CardView : Panel
         _rarity.Color = UiPalette.RarityBorder(def.Rarity);
         _art.Color = UiPalette.CardBg(def).Lightened(0.18f);
 
+        // 附魔徽标：汇总本牌附魔（力量+易伤等），让附魔在卡面看得见
+        _enchant.Text = EnchantBadge(card);
+
         // ArtPath 真贴图槽：非空则把贴图作卡图（占位阶段一般为空；此处仅着色块，换贴图留接口）
         if (!string.IsNullOrEmpty(def.ArtPath) && ResourceLoader.Exists(def.ArtPath) && ResourceLoader.Load(def.ArtPath) is Texture2D tex)
         {
@@ -103,6 +115,24 @@ public partial class CardView : Panel
     {
         if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
             OnClicked?.Invoke(this);
+    }
+
+    /// <summary>汇总卡牌附魔为徽标文本（力+N / 易+N×K / 蓄+N）。</summary>
+    private static string EnchantBadge(Card card)
+    {
+        if (card.Enchantments.Count == 0) return "";
+        var parts = new System.Collections.Generic.List<string>();
+        int power = 0, vuln = 0, vulnTimes = 0, charge = 0;
+        foreach (var e in card.Enchantments)
+        {
+            if (e.Type == EnchantmentType.Power) power += e.Magnitude;
+            else if (e.Type == EnchantmentType.Vulnerable) { vuln += e.Magnitude; vulnTimes += e.Remaining; }
+            else if (e.Type == EnchantmentType.Charge) charge += e.Magnitude;
+        }
+        if (power > 0) parts.Add($"力+{power}");
+        if (vuln > 0) parts.Add($"易+{vuln}×{vulnTimes}");
+        if (charge > 0) parts.Add($"蓄+{charge}");
+        return string.Join(" ", parts);
     }
 
     private void AnimateHover(bool hover)
