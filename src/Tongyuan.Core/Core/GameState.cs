@@ -72,13 +72,12 @@ public sealed class GameState
         var prep = ch.PrepCard;
         if (prep is null) return;
         int cost = prep.Def.Cost;
-        AdvanceAndSettle(ch, cost, settleEndpoint: true, endpointCard: prep, action: null);
-        // 整备牌回手（不从手牌消失/不进弃牌堆），效果=抽牌
         int before = ch.Hand.Count;
-        ch.Draw(prep.Def.Magnitude, Rng);
+        // AdvanceAndSettle → SettleCardEffect 已处理 DrawCards（ch.Draw(Magnitude=2)）
+        // 这里不再重复抽牌，否则会抽两次（共4张）
+        AdvanceAndSettle(ch, cost, settleEndpoint: true, endpointCard: prep, action: null);
         int drawn = ch.Hand.Count - before;
         Events.Add(new GameEvent.PrepUsed(ch.Id, drawn));
-        if (drawn > 0) Events.Add(new GameEvent.CardsDrawn(ch.Id, drawn));
     }
 
     // ---- 出牌：占位推进，沿途逐格结算，终点结算牌效果，牌进弃牌堆 ----

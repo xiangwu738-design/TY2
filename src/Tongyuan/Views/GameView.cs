@@ -207,6 +207,7 @@ public partial class GameView : Control
     private Control _fxLayer = null!;
     private ColorRect _pointerGlow = null!;
     private Control? _modalBg;
+    private Tween? _shakeTween;
     private CardView? _hoveredCard;
     private Control? _detailPopup;
     private Control? _detailOverlay;
@@ -1029,11 +1030,19 @@ public partial class GameView : Control
     private void Shake()
     {
         if (_margin is null) return;
-        var tw = CreateTween();
-        tw.TweenProperty(_margin, "position", new Vector2(-5, 2), 0.04f);
-        tw.TweenProperty(_margin, "position", new Vector2(5, -2), 0.04f);
-        tw.TweenProperty(_margin, "position", new Vector2(-3, 1), 0.04f);
-        tw.TweenProperty(_margin, "position", Vector2.Zero, 0.05f);
+        // Kill 旧 tween：多次受击同时跑多个 tween 互相干扰，会卡在 (5,-2) 等中间值导致内容永久右移
+        _shakeTween?.Kill();
+        _margin.Position = Vector2.Zero; // 每次震动始终从零出发，防止累计漂移
+        _shakeTween = CreateTween();
+        _shakeTween.TweenProperty(_margin, "position", new Vector2(-5, 2), 0.04f);
+        _shakeTween.TweenProperty(_margin, "position", new Vector2(5, -2), 0.04f);
+        _shakeTween.TweenProperty(_margin, "position", new Vector2(-3, 1), 0.04f);
+        _shakeTween.TweenProperty(_margin, "position", Vector2.Zero, 0.05f);
+        // 额外回调兜底：即使 tween 被外力打断也保证归零
+        _shakeTween.TweenCallback(Callable.From(() =>
+        {
+            if (_margin is not null && IsInstanceValid(_margin)) _margin.Position = Vector2.Zero;
+        }));
     }
 
     /// <summary>在屏幕坐标 center 处生成上飘+淡出伤害数字（敌受击=暖金，己受击=橙红，治疗=青白）。</summary>
