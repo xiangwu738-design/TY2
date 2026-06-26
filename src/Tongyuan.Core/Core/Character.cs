@@ -28,6 +28,8 @@ public sealed class Character
 
     public bool IsAlive => Hp > 0;
 
+    public const int HandLimit = 8;
+
     /// <summary>抽一张；抽牌堆空则弃牌堆带种子洗牌回抽牌堆（规格 §4.2）。</summary>
     public Card? DrawOne(DeterministicRng rng)
     {
@@ -47,6 +49,7 @@ public sealed class Character
     {
         for (int i = 0; i < n; i++)
         {
+            if (Hand.Count >= HandLimit) break;
             var c = DrawOne(rng);
             if (c is null) break;
             Hand.Add(c);

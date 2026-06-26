@@ -6,11 +6,11 @@ using Tongyuan.Views;
 namespace Tongyuan.UI;
 
 /// <summary>
-/// 头像组件（UI 重置阶段2）：统一角色/敌人头像——立绘(PortraitController) + 名牌 + HP条 +
-/// 位置/意图 + 蓄力 + 易伤(附魔只读显示器) + 激活/被瞄边框 + 点击。
-/// 复用 PortraitController 状态机；事件经 OnEvent 转发。
+/// 头像组件：立绘(PortraitController) + 名牌 + HP条 + 位置/意图 + 状态。
+/// 使用 Panel（非 PanelContainer）以避免容器强制覆盖手动布局的子节点位置。
+/// 布局：立绘区（上）→ 名称 → 子信息 → HP条 → HP文字 → 状态（下）。
 /// </summary>
-public partial class PortraitView : PanelContainer
+public partial class PortraitView : Panel
 {
     [Signal] public delegate void ClickedEventHandler();
 
@@ -27,9 +27,18 @@ public partial class PortraitView : PanelContainer
     private float _time;
     private bool _built;
 
+    // 布局常量
+    private const int W = 140;
+    private const int PortraitCx = W / 2;        // 立绘中心 x
+    private const int PortraitCy = 68;            // 立绘中心 y
+    private const int PortraitW = 80;
+    private const int PortraitH = 112;            // 半高 = 56 → 占 y=12..124
+    private const int InfoY = 130;                // 信息区起始 y（立绘底 y=124 + 6px gap）
+    private const int TotalH = 240;
+
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(132, 250);
+        CustomMinimumSize = new Vector2(W, TotalH);
         if (!_built) Build();
         MouseFilter = MouseFilterEnum.Stop;
     }
@@ -37,28 +46,33 @@ public partial class PortraitView : PanelContainer
     private void Build()
     {
         _built = true;
-        // 全身立绘（顶部，居中）——Node2D 手动定位（不进 VBox 流式）
-        Portrait = new PortraitController { DrawW = 76, DrawH = 150, Position = new Vector2(66, 82) };
+
+        // 立绘（Node2D，手动定位；Panel 不干预 Node2D 子节点）
+        Portrait = new PortraitController { DrawW = PortraitW, DrawH = PortraitH, Position = new Vector2(PortraitCx, PortraitCy) };
         AddChild(Portrait);
 
-        // 信息区（立绘下方，手动定位）
-        _name = new Label { Position = new Vector2(0, 168), Size = new Vector2(132, 20), HorizontalAlignment = HorizontalAlignment.Center };
-        _name.AddThemeFontSizeOverride("font_size", 14);
+        // 名称
+        _name = new Label { Position = new Vector2(0, InfoY), Size = new Vector2(W, 22), HorizontalAlignment = HorizontalAlignment.Center };
+        _name.AddThemeFontSizeOverride("font_size", 13);
         AddChild(_name);
 
-        _sub = new Label { Position = new Vector2(0, 188), Size = new Vector2(132, 16), HorizontalAlignment = HorizontalAlignment.Center };
-        _sub.AddThemeFontSizeOverride("font_size", 11);
+        // 副信息（位置/意图）
+        _sub = new Label { Position = new Vector2(2, InfoY + 24), Size = new Vector2(W - 4, 32), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _sub.AddThemeFontSizeOverride("font_size", 10);
         _sub.AddThemeColorOverride("font_color", new Color(0.85f, 0.7f, 0.4f));
         AddChild(_sub);
 
-        _hp = new ProgressBar { Position = new Vector2(12, 206), Size = new Vector2(108, 12), MinValue = 0 };
+        // HP 条（更高更醒目，经典 RPG 风格）
+        _hp = new ProgressBar { Position = new Vector2(8, InfoY + 60), Size = new Vector2(W - 16, 18), MinValue = 0 };
         AddChild(_hp);
 
-        _hpText = new Label { Position = new Vector2(0, 220), Size = new Vector2(132, 14), HorizontalAlignment = HorizontalAlignment.Center };
+        // HP 数字
+        _hpText = new Label { Position = new Vector2(0, InfoY + 80), Size = new Vector2(W, 14), HorizontalAlignment = HorizontalAlignment.Center };
         _hpText.AddThemeFontSizeOverride("font_size", 10);
         AddChild(_hpText);
 
-        _status = new Label { Position = new Vector2(0, 234), Size = new Vector2(132, 14), HorizontalAlignment = HorizontalAlignment.Center };
+        // 状态栏
+        _status = new Label { Position = new Vector2(0, InfoY + 96), Size = new Vector2(W, 14), HorizontalAlignment = HorizontalAlignment.Center };
         _status.AddThemeFontSizeOverride("font_size", 10);
         AddChild(_status);
 
@@ -71,14 +85,13 @@ public partial class PortraitView : PanelContainer
         _flash = new ColorRect { Color = new Color(1, 1, 1, 0), MouseFilter = MouseFilterEnum.Ignore };
         _flash.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_flash);
-        // 被指向高亮（玩家近战牌悬停：标记将受影响的敌人）
+        // 被指向高亮
         _targetGlow = new ColorRect { Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0f), MouseFilter = MouseFilterEnum.Ignore };
         _targetGlow.SetAnchorsPreset(LayoutPreset.FullRect);
         _targetGlow.Visible = false;
         AddChild(_targetGlow);
     }
 
-    /// <summary>玩家指向高亮（近战牌悬停预读：标记将挨打的敌人）。</summary>
     public void Highlight(bool on)
     {
         _targetGlow.Visible = on;
@@ -90,7 +103,7 @@ public partial class PortraitView : PanelContainer
         _time += (float)delta;
         if (_aimed && _aimGlow.Visible)
         {
-            float a = 0.18f + 0.18f * Mathf.Sin(_time * 4f); // 缓慢呼吸
+            float a = 0.18f + 0.18f * Mathf.Sin(_time * 4f);
             _aimGlow.Color = new Color(UiPalette.WarnOrange.R, UiPalette.WarnOrange.G, UiPalette.WarnOrange.B, a);
         }
     }
@@ -101,16 +114,16 @@ public partial class PortraitView : PanelContainer
         Portrait.BoundCharacterId = c.Id;
         Portrait.BoundEnemyId = -1;
         Portrait.IdleBreath = c.IsAlive;
-        Portrait.Tint = UiPalette.ColorOf(c.Color);   // 四色：角色专属色染剪影
-        Portrait.SetArt(c.PortraitArt);                // 真立绘贴图槽
+        Portrait.Tint = UiPalette.ColorOf(c.Color);
+        Portrait.SetArt(c.PortraitArt);
         if (!c.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
 
         _name.Text = (isActive ? "▶ " : "") + c.Name;
         _name.AddThemeColorOverride("font_color", UiPalette.ColorOf(c.Color).Lightened(0.2f));
-        _sub.Text = $"位{c.Position}";
+        _sub.Text = $"位 {c.Position}";
         _hp.MaxValue = c.MaxHp > 0 ? c.MaxHp : 1;
         _hp.Value = c.Hp;
-        _hpText.Text = $"HP {c.Hp}/{c.MaxHp}";
+        _hpText.Text = $"HP {c.Hp} / {c.MaxHp}";
         _status.Text = "";
 
         var bg = UiPalette.ColorOf(c.Color).Darkened(isActive ? 0.45f : 0.72f);
@@ -126,7 +139,7 @@ public partial class PortraitView : PanelContainer
         Portrait.BoundEnemyId = e.Id;
         Portrait.BoundCharacterId = -1;
         Portrait.IdleBreath = e.IsAlive;
-        Portrait.Tint = UiPalette.EnemyColor(e.Kind); // 敌人按种类色
+        Portrait.Tint = UiPalette.EnemyColor(e.Kind);
         Portrait.SetArt(e.PortraitArt);
         if (!e.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
 
@@ -146,8 +159,8 @@ public partial class PortraitView : PanelContainer
 
         var bg = clickable ? new Color(0.30f, 0.16f, 0.10f) : new Color(0.20f, 0.10f, 0.10f);
         var border = clickable ? UiPalette.VulnGold : (aimed ? UiPalette.WarnOrange : new Color(0.85f, 0.35f, 0.35f));
-        ApplyStyle(bg, border, clickable ? 3 : 3);
-        _aimed = false; // 敌人不做被瞄准脉动
+        ApplyStyle(bg, border, 3);
+        _aimed = false;
         _aimGlow.Visible = false;
     }
 
@@ -161,7 +174,6 @@ public partial class PortraitView : PanelContainer
         }
     }
 
-    /// <summary>受击闪白（文档 §七：闪白）。</summary>
     private void Flash()
     {
         _flash.Color = new Color(1, 1, 1, 0.75f);

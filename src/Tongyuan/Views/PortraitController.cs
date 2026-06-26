@@ -39,16 +39,9 @@ public partial class PortraitController : Node2D
 
     private float _stateTimer;   // Skill/Hit 剩余时长，到 0 回 Idle
     private float _time;         // 累计时间，驱动呼吸
-    private Label _hint = null!;
 
     public override void _Ready()
     {
-        // 立绘占位文字辅助提示（Label 子节点，避开字体 API）
-        _hint = new Label { MouseFilter = Control.MouseFilterEnum.Ignore };
-        _hint.AddThemeFontSizeOverride("font_size", 11);
-        _hint.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.3f));
-        _hint.HorizontalAlignment = HorizontalAlignment.Center;
-        AddChild(_hint);
         QueueRedraw();
     }
 
@@ -104,19 +97,6 @@ public partial class PortraitController : Node2D
             DrawRect(new Rect2(w * 0.04f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true);  // 右腿
         }
 
-        // 文字辅助提示：状态名 + "立绘占位"（Label 子节点定位在剪影底部）
-        string stateTxt = State switch
-        {
-            PortraitState.Idle => "待机", PortraitState.Skill => "施法",
-            PortraitState.Hit => "受击", PortraitState.Down => "倒下", _ => "",
-        };
-        if (_hint is not null)
-        {
-            _hint.Text = $"立绘占位·{stateTxt}";
-            _hint.Position = new Vector2(-w / 2f, h / 2f - 14);
-            _hint.Size = new Vector2(w, 14);
-            _hint.AddThemeColorOverride("font_color", color with { A = 0.85f });
-        }
     }
 
     public void PlaySkill(float duration = 0.45f) => Set(PortraitState.Skill, duration);

@@ -198,7 +198,7 @@ public partial class Main : Control
         foreach (var tpl in CharacterTemplates.All())
         {
             var c = CharacterTemplates.Instantiate(tpl, position: pos);
-            c.Draw(3, gs.Rng);
+            c.Draw(5, gs.Rng);
             gs.Characters.Add(c);
             pos++;
         }

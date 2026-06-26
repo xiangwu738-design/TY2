@@ -47,6 +47,9 @@ public partial class GameView : Control
     private HBoxContainer _actionRow = null!;
     private RichTextLabel _log = null!;
     private MarginContainer? _margin;
+    private VBoxContainer _sidebar = null!;
+    private Button _sidebarToggle = null!;
+    private bool _sidebarOpen;
 
     public override void _Ready()
     {
@@ -99,22 +102,27 @@ public partial class GameView : Control
         scroll.AddChild(row);
 
         var vb = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
-        vb.AddThemeConstantOverride("separation", 14);   // 加大间距
+        vb.AddThemeConstantOverride("separation", 14);
         row.AddChild(vb);
 
-        var sidebar = new VBoxContainer { CustomMinimumSize = new Vector2(360, 0), SizeFlagsVertical = SizeFlags.ExpandFill };
-        sidebar.AddThemeConstantOverride("separation", 4);
-        row.AddChild(sidebar);
-        sidebar.AddChild(SectionLabel("事件日志"));
+        // 日志侧边栏（默认折叠，点按钮展开）
+        _sidebar = new VBoxContainer { CustomMinimumSize = new Vector2(76, 0), SizeFlagsVertical = SizeFlags.ExpandFill };
+        _sidebar.AddThemeConstantOverride("separation", 4);
+        row.AddChild(_sidebar);
+        _sidebarToggle = new Button { Text = "◀ 日志" };
+        _sidebarToggle.AddThemeFontSizeOverride("font_size", 11);
+        _sidebarToggle.Pressed += ToggleSidebar;
+        _sidebar.AddChild(_sidebarToggle);
         _log = new RichTextLabel
         {
             BbcodeEnabled = true,
             ScrollFollowing = true,
             SizeFlagsVertical = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(360, 0),
+            CustomMinimumSize = new Vector2(300, 0),
+            Visible = false,
         };
         _log.AddThemeFontSizeOverride("font_size", 12);
-        sidebar.AddChild(_log);
+        _sidebar.AddChild(_log);
 
         // 顶栏
         var topbar = new HBoxContainer();
@@ -147,11 +155,17 @@ public partial class GameView : Control
 
         vb.AddChild(topbar);
 
-        // 战场
-        vb.AddChild(SectionLabel("战场（左=位N后方 ··· 右=位1前线 ··· 敌人 | 点头像切换当前角色）"));
-        _battleField = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _battleField.AddThemeConstantOverride("separation", 8);
-        vb.AddChild(_battleField);
+        // 战场（居中：左右各加弹性间距，角色组和敌人组聚拢在视口中央）
+        vb.AddChild(SectionLabel("战场（左=后排 ··· 前线⚔敌人 | 点头像切换当前角色）"));
+        var battleWrapper = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var bLeft = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        battleWrapper.AddChild(bLeft);
+        _battleField = new HBoxContainer();
+        _battleField.AddThemeConstantOverride("separation", 10);
+        battleWrapper.AddChild(_battleField);
+        var bRight = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        battleWrapper.AddChild(bRight);
+        vb.AddChild(battleWrapper);
 
         // 时间轴
         vb.AddChild(SectionLabel("时间轴 / 行动条（▶ 当前指针；彩=将推进·各角色色，红⚠=将触发）"));
@@ -249,13 +263,13 @@ public partial class GameView : Control
         var alive = State!.AliveCharacters.OrderByDescending(c => c.Position).ToList();
         foreach (var c in alive)
             _battleField.AddChild(MakePortrait(c, c.Id == _activeId));
-        var spacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _battleField.AddChild(spacer);
-        var arrow = new Label { Text = "⚔" };
-        arrow.AddThemeFontSizeOverride("font_size", 20);
+        var gap1 = new Control { CustomMinimumSize = new Vector2(24, 0) };
+        _battleField.AddChild(gap1);
+        var arrow = new Label { Text = "⚔", VerticalAlignment = VerticalAlignment.Center };
+        arrow.AddThemeFontSizeOverride("font_size", 22);
         _battleField.AddChild(arrow);
-        // 敌方占位规则与我方对称：只渲染存活敌人、按 Position 1..N 排开；
-        // 死亡者由 Core.ContractEnemyPositions 自动收缩，UI 即"死一个少一个"，不留空位。
+        var gap2 = new Control { CustomMinimumSize = new Vector2(24, 0) };
+        _battleField.AddChild(gap2);
         foreach (var e in State.Enemies.Where(e => e.IsAlive).OrderBy(e => e.Position))
             _battleField.AddChild(MakeEnemyBlock(e, _targetMode == TargetMode.Enemy));
     }
@@ -426,42 +440,32 @@ public partial class GameView : Control
             return;
         }
 
-        // 尖塔式扇形手牌（文档 §二）：居中弧形排列，外侧牌微倾+下移
+        // 扇形手牌：普通手牌 + 整备牌（整备牌排在最右，作为普通卡显示，打出后自动回手）
         var hand = c.Hand;
-        int n = hand.Count;
+        // 合并：普通牌 + 整备牌（整备牌作为常驻卡排末尾）
+        bool hasPrep = c.PrepCard is not null;
+        int n = hand.Count + (hasPrep ? 1 : 0);
         float cardW = CardView.CardSize.X;
-        float gap = 10f;
+        float cardGap = 10f;
         float centerX = _viewSize.X / 2f;
-        float baseY = 24f; // 扇形顶端基线（卡顶）
+        float baseY = 24f;
         for (int i = 0; i < n; i++)
         {
-            var cv = (CardView)MakeCardButton(c, hand[i]);
-            float off = n > 1 ? (i - (n - 1f) / 2f) : 0f;            // -中..+中
-            float spacing = Math.Min(cardW + gap, (_viewSize.X * 0.7f) / Math.Max(1, n));
+            bool isPrep = hasPrep && i == n - 1;
+            CardView cv = isPrep
+                ? MakePrepCardView(c, c.PrepCard!)
+                : (CardView)MakeCardButton(c, hand[i]);
+            float off = n > 1 ? (i - (n - 1f) / 2f) : 0f;
+            float spacing = Math.Min(cardW + cardGap, (_viewSize.X * 0.7f) / Math.Max(1, n));
             float x = centerX + off * spacing - cardW / 2f;
-            float rot = off * 0.05f;                                  // 外侧倾斜 ~3°/张
-            float y = baseY + off * off * 4f;                         // 外侧下移成弧
+            float rot = off * 0.05f;
+            float y = baseY + off * off * 4f;
             cv.Position = new Vector2(x, y);
             cv.Rotation = rot;
             _handRow.AddChild(cv);
         }
 
-        // 整备牌（回手，常驻）+ 空过
-        if (c.PrepCard is not null)
-        {
-            var prep = c.PrepCard;
-            var btn = new Button
-            {
-                Text = $"{prep.Def.Name} 占{prep.Def.Cost}\n（回手·抽{prep.Def.Magnitude}）",
-                CustomMinimumSize = new Vector2(110, 40),
-            };
-            btn.AddThemeFontSizeOverride("font_size", 11);
-            int id = c.Id;
-            btn.MouseEntered += () => Hover(new PlayerAction(id, ActionType.UsePrep));
-            btn.MouseExited += ClearHover;
-            btn.Pressed += () => Play(new PlayerAction(id, ActionType.UsePrep));
-            _actionRow.AddChild(btn);
-        }
+        // 行动区：只保留空过
         var skip = new Button { Text = "空过", CustomMinimumSize = new Vector2(64, 40) };
         skip.AddThemeFontSizeOverride("font_size", 12);
         int sid = c.Id;
@@ -469,6 +473,26 @@ public partial class GameView : Control
         skip.MouseExited += ClearHover;
         skip.Pressed += () => Play(new PlayerAction(sid, ActionType.Skip));
         _actionRow.AddChild(skip);
+    }
+
+    private CardView MakePrepCardView(Character c, Card card)
+    {
+        var view = new CardView();
+        view.Setup(card, c);
+        int id = c.Id;
+        view.OnHovered += v => { _hoveredCard = v; Hover(new PlayerAction(id, ActionType.UsePrep)); };
+        view.OnUnhovered += v => { v.HidePreview(); if (_hoveredCard == v) _hoveredCard = null; ClearHover(); };
+        view.Targeting = CardView.TargetKind.None;
+        view.OnPlay += _ => Play(new PlayerAction(id, ActionType.UsePrep));
+        return view;
+    }
+
+    private void ToggleSidebar()
+    {
+        _sidebarOpen = !_sidebarOpen;
+        _log.Visible = _sidebarOpen;
+        _sidebarToggle.Text = _sidebarOpen ? "▶ 关闭日志" : "◀ 日志";
+        _sidebar.CustomMinimumSize = _sidebarOpen ? new Vector2(300, 0) : new Vector2(76, 0);
     }
 
     private Control MakeCardButton(Character c, Card card)
@@ -674,7 +698,6 @@ public partial class GameView : Control
         _targetingCard = null;
         Render();
         AnimatePortraits(ev);      // 立绘状态机协同（当前牌演出）
-        PlayCardAnimation(action); // 出牌动画
         if (_net is not null && !_isClient) _net.Broadcast(action);
         RenderTop(); // 更新队列计数
         CallDeferred(MethodName.TweenPointerToCurrentCell); // 指针平滑滑到当前格
@@ -752,26 +775,6 @@ public partial class GameView : Control
         string tag = def.CustomEffect is not null ? "代码卡" : "数据卡";
         AppendLog($"[color=#80ff80]✦ 发示例卡[{tag}]：{def.Name}（{def.EffectDescription()}）[/color]");
         Render();
-    }
-
-    // ---- 出牌动画：中央卡牌代理缩放+上浮+淡出（Tween，不阻塞 Core）----
-    private void PlayCardAnimation(PlayerAction action)
-    {
-        var size = GetViewport().GetVisibleRect().Size;
-        var proxy = new Panel { CustomMinimumSize = new Vector2(90, 120) };
-        var sb = new StyleBoxFlat { BgColor = new Color(0.95f, 0.78f, 0.2f, 0.92f), BorderColor = Colors.White };
-        sb.SetCornerRadiusAll(6); sb.SetBorderWidthAll(2);
-        proxy.AddThemeStyleboxOverride("panel", sb);
-        proxy.PivotOffset = new Vector2(45, 60);
-        proxy.Position = new Vector2(size.X / 2f - 45, size.Y / 2f - 60);
-        proxy.Scale = new Vector2(0.3f, 0.3f);
-        AddChild(proxy);
-        var tw = CreateTween();
-        tw.TweenProperty(proxy, "scale", Vector2.One, 0.12).SetTrans(Tween.TransitionType.Back);
-        tw.Parallel().TweenProperty(proxy, "position:y", size.Y / 2f - 90, 0.20);
-        tw.TweenInterval(0.10);
-        tw.TweenProperty(proxy, "modulate:a", 0f, 0.18);
-        tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(proxy)) proxy.QueueFree(); }));
     }
 
     /// <summary>把事件流喂给各立绘（每 PortraitController.OnEvent 按 id 过滤，只响应自身）。</summary>
