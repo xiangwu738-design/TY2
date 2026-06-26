@@ -22,6 +22,21 @@ public partial class PortraitController : Node2D
     /// <summary>待机呼吸幅度（占位：循环帧的简化）。</summary>
     public bool IdleBreath { get; set; } = true;
 
+    /// <summary>角色/敌人主色（四色系统）：剪影染色，让不同单位一眼可辨。</summary>
+    public Color Tint { get; set; } = new(0.5f, 0.55f, 0.65f);
+
+    /// <summary>立绘贴图槽（Character.PortraitArt / Enemy.PortraitArt）。非空则画贴图，否则染色剪影。</summary>
+    public string? ArtPath { get; private set; }
+    private Texture2D? _art;
+    public void SetArt(string? path)
+    {
+        ArtPath = path;
+        _art = null;
+        if (!string.IsNullOrEmpty(path) && ResourceLoader.Exists(path))
+            _art = ResourceLoader.Load(path) as Texture2D;
+        QueueRedraw();
+    }
+
     private float _stateTimer;   // Skill/Hit 剩余时长，到 0 回 Idle
     private float _time;         // 累计时间，驱动呼吸
     private Label _hint = null!;
@@ -79,20 +94,29 @@ public partial class PortraitController : Node2D
             color = color.Lightened(0.05f + 0.05f * Mathf.Sin(_time * 2.2f));
 
         float w = DrawW, h = DrawH;
-        // 全身像占位：暗底板
-        DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), new Color(0.10f, 0.11f, 0.14f, 0.9f), filled: true);
-        DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), color with { A = 0.8f }, filled: false, 2f);
 
-        // 全身剪影：头(圆) + 躯干(梯形/矩形) + 腿
-        var sil = color with { A = 0.55f };
-        float headR = w * 0.16f;
-        var head = new Vector2(0, -h / 2f + headR + 2);
-        DrawCircle(head, headR, sil);
-        float bodyTop = head.Y + headR;
-        float bodyH = h * 0.42f;
-        DrawRect(new Rect2(-w * 0.20f, bodyTop, w * 0.40f, bodyH), sil, filled: true);     // 躯干
-        DrawRect(new Rect2(-w * 0.16f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true); // 左腿
-        DrawRect(new Rect2(w * 0.04f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true);  // 右腿
+        // 真立绘贴图（PortraitArt）：有则直接画（纯粹图片区分），状态叠加边框
+        if (_art is not null)
+        {
+            var texRect = new Rect2(-w / 2f, -h / 2f, w, h);
+            DrawTextureRect(_art, texRect, false);
+            DrawRect(texRect, color with { A = State == PortraitState.Idle ? 0.25f : 0.55f }, filled: false, 2f);
+        }
+        else
+        {
+            // 占位全身剪影：统一中性（不靠颜色/剪影区分角色；区分仅靠贴图）
+            DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), new Color(0.12f, 0.13f, 0.16f, 0.92f), filled: true);
+            DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), color with { A = 0.6f }, filled: false, 2f);
+            var sil = new Color(0.34f, 0.36f, 0.40f, 0.75f);
+            float headR = w * 0.16f;
+            var head = new Vector2(0, -h / 2f + headR + 2);
+            DrawCircle(head, headR, sil);
+            float bodyTop = head.Y + headR;
+            float bodyH = h * 0.42f;
+            DrawRect(new Rect2(-w * 0.20f, bodyTop, w * 0.40f, bodyH), sil, filled: true);     // 躯干
+            DrawRect(new Rect2(-w * 0.16f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true); // 左腿
+            DrawRect(new Rect2(w * 0.04f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true);  // 右腿
+        }
 
         // 文字辅助提示：状态名 + "立绘占位"（Label 子节点定位在剪影底部）
         string stateTxt = State switch

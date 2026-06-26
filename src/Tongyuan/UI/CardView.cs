@@ -32,6 +32,7 @@ public partial class CardView : Panel
     private Label _cost = null!;
     private Label _enchant = null!;
     private ColorRect _art = null!;
+    private TextureRect _artTex = null!;
     private Label _name = null!;
     private Label _type = null!;
     private Label _desc = null!;
@@ -79,9 +80,11 @@ public partial class CardView : Panel
         _enchant.AddThemeColorOverride("font_color", UiPalette.VulnGold);
         AddChild(_enchant);
 
-        // 卡图区（占位渐变/贴图槽）
+        // 卡图区（技能图片：CardDef.ArtPath；无图则占位色块）
         _art = new ColorRect { CustomMinimumSize = new Vector2(0, 96) };
         vb.AddChild(_art);
+        _artTex = new TextureRect { CustomMinimumSize = new Vector2(0, 96), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, Visible = false };
+        vb.AddChild(_artTex);
 
         _name = new Label { HorizontalAlignment = HorizontalAlignment.Center };
         _name.AddThemeFontSizeOverride("font_size", 15);
@@ -121,11 +124,15 @@ public partial class CardView : Panel
         // 附魔徽标：汇总本牌附魔（力量+易伤等），让附魔在卡面看得见
         _enchant.Text = EnchantBadge(card);
 
-        // ArtPath 真贴图槽：非空则把贴图作卡图（占位阶段一般为空；此处仅着色块，换贴图留接口）
+        // 技能图片（CardDef.ArtPath）：有则显示真图（纯粹图片区分），无则占位色块
         if (!string.IsNullOrEmpty(def.ArtPath) && ResourceLoader.Exists(def.ArtPath) && ResourceLoader.Load(def.ArtPath) is Texture2D tex)
         {
-            // 占位阶段：贴图加载能力已验证，实际 TextureRect 替换在美术资源接入时启用
-            _art.Color = UiPalette.CardBg(def);
+            _artTex.Texture = tex;
+            _artTex.Visible = true;
+        }
+        else
+        {
+            _artTex.Visible = false;
         }
     }
 

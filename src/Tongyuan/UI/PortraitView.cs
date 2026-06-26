@@ -101,6 +101,8 @@ public partial class PortraitView : PanelContainer
         Portrait.BoundCharacterId = c.Id;
         Portrait.BoundEnemyId = -1;
         Portrait.IdleBreath = c.IsAlive;
+        Portrait.Tint = UiPalette.ColorOf(c.Color);   // 四色：角色专属色染剪影
+        Portrait.SetArt(c.PortraitArt);                // 真立绘贴图槽
         if (!c.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
 
         _name.Text = (isActive ? "▶ " : "") + c.Name;
@@ -124,6 +126,8 @@ public partial class PortraitView : PanelContainer
         Portrait.BoundEnemyId = e.Id;
         Portrait.BoundCharacterId = -1;
         Portrait.IdleBreath = e.IsAlive;
+        Portrait.Tint = UiPalette.EnemyColor(e.Kind); // 敌人按种类色
+        Portrait.SetArt(e.PortraitArt);
         if (!e.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
 
         _name.Text = e.IsAlive ? e.Name : $"{e.Name}×";
