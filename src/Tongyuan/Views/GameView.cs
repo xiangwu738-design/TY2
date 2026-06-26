@@ -192,9 +192,14 @@ public partial class GameView : Control
         _fxLayer = new Control { MouseFilter = MouseFilterEnum.Ignore };
         _fxLayer.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_fxLayer);
+
+        // 指针光点（文档 §七：指针逐格平滑滑动）——持久节点，出牌后 Tween 到当前格
+        _pointerGlow = new ColorRect { CustomMinimumSize = new Vector2(10, 10), Color = UiPalette.PointerGold, ZIndex = 90, MouseFilter = MouseFilterEnum.Ignore };
+        _fxLayer.AddChild(_pointerGlow);
     }
 
     private Control _fxLayer = null!;
+    private ColorRect _pointerGlow = null!;
 
     private static Label SectionLabel(string text)
     {
@@ -459,6 +464,7 @@ public partial class GameView : Control
     private Control MakeCell(int cell, HashSet<int> trav, HashSet<int> trig, Color previewColor)
     {
         var p = new Panel { CustomMinimumSize = new Vector2(66, 96) };
+        if (cell == State!.Pointer) p.Name = "__ptr_cell__"; // 供指针光点定位
         var sb = new StyleBoxFlat();
         sb.SetCornerRadiusAll(4);
         var bg = new Color(0.12f, 0.12f, 0.15f);
@@ -691,8 +697,20 @@ public partial class GameView : Control
         PlayCardAnimation(action); // 出牌动画
         if (_net is not null && !_isClient) _net.Broadcast(action);
         RenderTop(); // 更新队列计数
+        CallDeferred(MethodName.TweenPointerToCurrentCell); // 指针平滑滑到当前格
         // 节奏：当前牌演出一小段后，解锁并处理队列下一张（或结算战斗结束）
         GetTree().CreateTimer(0.4f).Timeout += OnPlayPaced;
+    }
+
+    /// <summary>指针光点平滑滑到当前格（文档 §七：逐格平滑滑动，ease out）。</summary>
+    private void TweenPointerToCurrentCell()
+    {
+        var cell = _timelineRow.GetChildren().OfType<Control>().FirstOrDefault(c => c.Name == "__ptr_cell__");
+        if (cell is null) return;
+        Vector2 target = cell.GlobalPosition + new Vector2(28, 2);
+        if (!_pointerGlow.Visible) { _pointerGlow.Position = target; _pointerGlow.Visible = true; return; }
+        var tw = CreateTween();
+        tw.TweenProperty(_pointerGlow, "position", target, 0.18f).SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.Out);
     }
 
     private void OnPlayPaced()
