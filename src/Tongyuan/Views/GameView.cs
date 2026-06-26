@@ -477,7 +477,8 @@ public partial class GameView : Control
         int n = hand.Count + (hasPrep ? 1 : 0);
         float cardW = CardView.CardSize.X;
         float cardGap = 10f;
-        float centerX = _viewSize.X / 2f;
+        // 用 _handRow 实际宽度的中心（布局已 settled 后）；首帧未 settled 则用视口中心回退
+        float centerX = _handRow.Size.X > 50f ? _handRow.Size.X / 2f : _viewSize.X / 2f;
         float baseY = 24f;
         for (int i = 0; i < n; i++)
         {
@@ -529,6 +530,8 @@ public partial class GameView : Control
         _log.Visible = _sidebarOpen;
         _sidebarToggle.Text = _sidebarOpen ? "▶ 关闭日志" : "◀ 日志";
         _sidebar.CustomMinimumSize = _sidebarOpen ? new Vector2(300, 0) : new Vector2(76, 0);
+        // 侧边栏尺寸变化→下一帧 layout 稳定后重排手牌，确保 centerX 用正确的 _handRow 宽度
+        CallDeferred(MethodName.RenderHand);
     }
 
     private Control MakeCardButton(Character c, Card card)
@@ -600,6 +603,13 @@ public partial class GameView : Control
     /// <summary>卡牌目标弹窗（屏幕中心显示可选卡牌，挂在 fxLayer 最顶层，灰色透明背景）。</summary>
     private void OpenCardTargetModal(Character c, Card enchCard)
     {
+        var validTargets = c.Hand.FindAll(hc => hc.InstanceId != enchCard.InstanceId);
+        if (validTargets.Count == 0)
+        {
+            Toast("手牌中没有其他可附魔的目标");
+            return;
+        }
+
         if (_modalBg is not null) { _modalBg.QueueFree(); _modalBg = null; }
         _modalBg = new Control { MouseFilter = MouseFilterEnum.Stop, ZIndex = 60 };
         _modalBg.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -615,9 +625,8 @@ public partial class GameView : Control
         vb.AddChild(new Label { Text = "选择一张手牌挂力量附魔", HorizontalAlignment = HorizontalAlignment.Center });
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", 20);
-        foreach (var hc in c.Hand)
+        foreach (var hc in validTargets)
         {
-            if (hc.InstanceId == enchCard.InstanceId) continue;
             var cv = new CardView();
             cv.Setup(hc, c);
             cv.DragPlay = false; // 弹窗：点击选牌
@@ -894,7 +903,8 @@ public partial class GameView : Control
         AnimatePortraits(ev);      // 立绘状态机协同（当前牌演出）
         if (_net is not null && !_isClient) _net.Broadcast(action);
         RenderTop(); // 更新队列计数
-        CallDeferred(MethodName.TweenPointerToCurrentCell); // 指针平滑滑到当前格
+        // 同飘字：等下一帧 layout settled 后再读 cell.GlobalPosition
+        GetTree().CreateTimer(0.0).Timeout += TweenPointerToCurrentCell;
         // 节奏：当前牌演出一小段后，解锁并处理队列下一张（或结算战斗结束）
         GetTree().CreateTimer(0.4f).Timeout += OnPlayPaced;
     }
@@ -934,9 +944,9 @@ public partial class GameView : Control
         if (_net?.State is not null) State = _net.State; // 客户端快照重放后切换到权威状态
         if (State is null) return;
         LogEvents(State.Events);
+        Render();  // 先重建 portraits，再驱动动画（保证 AnimatePortraits 拿到正确的 view 引用）
         AnimatePortraits(State.Events);
         _netLabel!.Text = _isClient ? "[已加入·同步]" : "[建主·端口" + NetController.DefaultPort + "]";
-        Render();
     }
 
     // ---- 局域网联机 ----
@@ -984,7 +994,7 @@ public partial class GameView : Control
     /// <summary>把事件流喂给各立绘（每 PortraitController.OnEvent 按 id 过滤，只响应自身）。</summary>
     private void AnimatePortraits(List<GameEvent> ev)
     {
-        // 收集伤害事件，延迟到下一帧布局 settled 后按 GlobalPosition 生成飘字
+        var dmgList = new System.Collections.Generic.List<(PortraitView View, int Amount, bool Enemy)>();
         foreach (var e in ev)
         {
             foreach (var p in _charPortraits.Values) p.OnEvent(e);
@@ -994,14 +1004,28 @@ public partial class GameView : Control
                 var pv = dd.TargetIsEnemy
                     ? (_enemyPortraits.TryGetValue(dd.TargetId, out var ep) ? ep : null)
                     : (_charPortraits.TryGetValue(dd.TargetId, out var cp) ? cp : null);
-                if (pv is not null) _pendingDmg.Add((pv, dd.Amount, dd.TargetIsEnemy));
-                if (!dd.TargetIsEnemy && dd.Amount > 0) Shake(); // 角色受击屏震（文档 §七）
+                if (pv is not null) dmgList.Add((pv, dd.Amount, dd.TargetIsEnemy));
+                if (!dd.TargetIsEnemy && dd.Amount > 0) Shake();
             }
         }
-        if (_pendingDmg.Count > 0) CallDeferred(MethodName.SpawnPendingDamageNumbers);
+        if (dmgList.Count == 0) return;
+        // 等下一帧：CallDeferred 与 Layout 的 SORT_CHILDREN 级联通知在同一队列，父级容器的
+        // sort 可能晚于 spawn。用 Timer(0) 确保当前帧全部 layout 结算后再取 GlobalPosition。
+        GetTree().CreateTimer(0.0).Timeout += () =>
+        {
+            if (!IsInstanceValid(this)) return;
+            foreach (var (view, amount, enemy) in dmgList)
+            {
+                if (!IsInstanceValid(view)) continue;
+                // 用 Control.GlobalPosition（UI 坐标系）+ 立绘中心偏移，避免 Node2D 坐标系歧义
+                // PortraitView: W=140, PortraitCx=70, 飘字出现在立绘上半部分
+                var center = view.GlobalPosition + new Vector2(70f, 28f);
+                SpawnDamageNumber(center, amount, enemy);
+            }
+        };
     }
 
-    /// <summary>屏震（文档 §七：受击→屏震）：_margin 短促抖动后归零。</summary>
+    /// <summary>屏震（受击→屏震）：_margin 短促抖动后归零。</summary>
     private void Shake()
     {
         if (_margin is null) return;
@@ -1012,35 +1036,30 @@ public partial class GameView : Control
         tw.TweenProperty(_margin, "position", Vector2.Zero, 0.05f);
     }
 
-    private readonly List<(PortraitView View, int Amount, bool Enemy)> _pendingDmg = new();
-
-    private void SpawnPendingDamageNumbers()
-    {
-        foreach (var (view, amount, enemy) in _pendingDmg)
-        {
-            if (IsInstanceValid(view) && view.Portrait is not null)
-                SpawnDamageNumber(view.Portrait.GlobalPosition, amount, enemy);
-        }
-        _pendingDmg.Clear();
-    }
-
-    /// <summary>在 pos 处生成上飘+淡出的伤害数字（敌受击=暖金，角色受击=警示红，治疗负值=青白）。</summary>
-    private void SpawnDamageNumber(Vector2 pos, int amount, bool targetIsEnemy)
+    /// <summary>在屏幕坐标 center 处生成上飘+淡出伤害数字（敌受击=暖金，己受击=橙红，治疗=青白）。</summary>
+    private void SpawnDamageNumber(Vector2 center, int amount, bool targetIsEnemy)
     {
         bool heal = amount < 0;
+        int fs = heal ? 20 : (amount >= 8 ? 28 : 22);
+        const float W = 72f, H = 36f;
         var label = new Label
         {
             Text = heal ? $"+{-amount}" : amount.ToString(),
             ZIndex = 100,
-            Position = pos + new Vector2(-14, -40),
-            Size = new Vector2(60, 30),
+            MouseFilter = MouseFilterEnum.Ignore,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Size = new Vector2(W, H),
+            // center 是立绘上半部分中心；将 label 水平居中、向上偏半个 label 高
+            Position = center + new Vector2(-W / 2f, -H),
         };
-        label.AddThemeFontSizeOverride("font_size", heal ? 20 : (amount >= 8 ? 28 : 22));
-        label.AddThemeColorOverride("font_color", heal ? UiPalette.ShieldTeal : (targetIsEnemy ? UiPalette.VulnGold : UiPalette.WarnOrange));
+        label.AddThemeFontSizeOverride("font_size", fs);
+        label.AddThemeColorOverride("font_color",
+            heal ? UiPalette.ShieldTeal : (targetIsEnemy ? UiPalette.VulnGold : UiPalette.WarnOrange));
         _fxLayer.AddChild(label);
         var tw = CreateTween();
-        tw.TweenProperty(label, "position:y", label.Position.Y - 44, 0.55f).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
-        tw.Parallel().TweenProperty(label, "modulate:a", 0f, 0.7f).SetDelay(0.2f);
+        tw.TweenProperty(label, "position:y", label.Position.Y - 52f, 0.6f)
+          .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        tw.Parallel().TweenProperty(label, "modulate:a", 0f, 0.75f).SetDelay(0.15f);
         tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(label)) label.QueueFree(); }));
     }
 
