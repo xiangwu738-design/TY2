@@ -296,6 +296,8 @@ public sealed class GameState
     {
         var alive = Enemies.Where(e => e.IsAlive).OrderBy(e => e.Position).ToList();
         for (int i = 0; i < alive.Count; i++) alive[i].Position = i + 1;
+        // 阵亡敌人从时间轴移除（文档：杀掉则其行动节点删除）
+        Timeline.Enemies.RemoveAll(e => !e.IsAlive);
     }
 
     // 防御：铺护盾，绑守护关系

@@ -45,7 +45,6 @@ public partial class GameView : Control
     private Label _activeLabel = null!;
     private Control _handRow = null!;
     private HBoxContainer _actionRow = null!;
-    private Label _previewLabel = null!;
     private RichTextLabel _log = null!;
     private MarginContainer? _margin;
 
@@ -81,7 +80,7 @@ public partial class GameView : Control
         margin.SetAnchorsPreset(LayoutPreset.FullRect);
         margin.AddThemeConstantOverride("margin_left", 10);
         margin.AddThemeConstantOverride("margin_right", 10);
-        margin.AddThemeConstantOverride("margin_top", 8);
+        margin.AddThemeConstantOverride("margin_top", 24);   // 整体下移
         margin.AddThemeConstantOverride("margin_bottom", 8);
         _margin = margin;
         AddChild(margin);
@@ -94,9 +93,28 @@ public partial class GameView : Control
         };
         margin.AddChild(scroll);
 
-        var vb = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        vb.AddThemeConstantOverride("separation", 8);
-        scroll.AddChild(vb);
+        // 主区(左) + 日志侧边栏(右)
+        var row = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        row.AddThemeConstantOverride("separation", 12);
+        scroll.AddChild(row);
+
+        var vb = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
+        vb.AddThemeConstantOverride("separation", 14);   // 加大间距
+        row.AddChild(vb);
+
+        var sidebar = new VBoxContainer { CustomMinimumSize = new Vector2(360, 0), SizeFlagsVertical = SizeFlags.ExpandFill };
+        sidebar.AddThemeConstantOverride("separation", 4);
+        row.AddChild(sidebar);
+        sidebar.AddChild(SectionLabel("事件日志"));
+        _log = new RichTextLabel
+        {
+            BbcodeEnabled = true,
+            ScrollFollowing = true,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(360, 0),
+        };
+        _log.AddThemeFontSizeOverride("font_size", 12);
+        sidebar.AddChild(_log);
 
         // 顶栏
         var topbar = new HBoxContainer();
@@ -158,35 +176,9 @@ public partial class GameView : Control
         _actionRow.AddThemeConstantOverride("separation", 6);
         vb.AddChild(_actionRow);
 
-        // 预览（文档 §五：数值预览替玩家算——放大加粗，暖金边框，醒目）
-        var pp = new Panel { CustomMinimumSize = new Vector2(0, 72) };
-        var pstyle = new StyleBoxFlat { BgColor = UiPalette.PanelBg, BorderColor = UiPalette.GoldBorder };
-        pstyle.SetBorderWidthAll(2); pstyle.SetCornerRadiusAll(6);
-        pstyle.BorderWidthTop = 3;
-        pstyle.ContentMarginLeft = 10; pstyle.ContentMarginTop = 6; pstyle.ContentMarginRight = 10; pstyle.ContentMarginBottom = 6;
-        pp.AddThemeStyleboxOverride("panel", pstyle);
-        vb.AddChild(pp);
-        _previewLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _previewLabel.AddThemeFontSizeOverride("font_size", 17);
-        _previewLabel.AddThemeColorOverride("font_color", UiPalette.TextMain);
-        _previewLabel.SetAnchorsPreset(LayoutPreset.FullRect);
-        _previewLabel.AddThemeConstantOverride("offset_left", 10);
-        _previewLabel.AddThemeConstantOverride("offset_right", -10);
-        _previewLabel.AddThemeConstantOverride("offset_top", 6);
-        _previewLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        pp.AddChild(_previewLabel);
+        // （预计框已删除——预计后果改为悬浮在牌上方，见 CardView.ShowPreview）
 
-        // 日志
-        vb.AddChild(SectionLabel("事件日志"));
-        _log = new RichTextLabel
-        {
-            CustomMinimumSize = new Vector2(0, 130),
-            BbcodeEnabled = true,
-            ScrollFollowing = true,
-            SizeFlagsVertical = SizeFlags.ExpandFill,
-        };
-        _log.AddThemeFontSizeOverride("font_size", 12);
-        vb.AddChild(_log);
+        // （日志已移到右侧侧边栏）
 
         // FX 层：伤害飘字等悬浮特效（置顶、不挡鼠标、跨 Render 持久）
         _fxLayer = new Control { MouseFilter = MouseFilterEnum.Ignore };
@@ -201,6 +193,7 @@ public partial class GameView : Control
     private Control _fxLayer = null!;
     private ColorRect _pointerGlow = null!;
     private Control? _modalBg;
+    private CardView? _hoveredCard;
 
     private static Label SectionLabel(string text)
     {
@@ -233,13 +226,11 @@ public partial class GameView : Control
         RenderBattleField();
         RenderTimeline();
         RenderHand();
-        RenderPreview();
     }
 
     private void RenderHover()
     {
-        RenderTimeline();
-        RenderPreview();
+        RenderTimeline(); // 遍历/触发高亮（预计框已移到牌上方悬浮）
     }
 
     private void RenderTop()
@@ -486,9 +477,11 @@ public partial class GameView : Control
         var view = new CardView();
         view.Setup(card, c);
         var action = ActionForCard(c, card);
-        view.OnHovered += _ => Hover(action);
-        view.OnUnhovered += _ => ClearHover();
+        view.OnHovered += v => { _hoveredCard = v; Hover(action); };
+        view.OnUnhovered += v => { v.HidePreview(); if (_hoveredCard == v) _hoveredCard = null; ClearHover(); };
         view.TargetPicker = PickEnemyAt;
+        view.OnEnemyHover += HighlightEnemyAt;
+        view.OnNoTarget += () => Toast("无可选目标敌人，牌已返回手牌");
         int id = c.Id;
         // 目标类型：远程/代码卡→拖箭头选敌；力量附魔具体牌→向上托弹窗选牌；其余→向上托出牌
         if (def.Effect == EffectKind.AttackDamage && (def.DamageType == DamageType.Ranged || def.NeedsTargetEnemy))
@@ -512,6 +505,33 @@ public partial class GameView : Control
             if (pv.GetGlobalRect().HasPoint(globalPos)) return eid;
         }
         return null;
+    }
+
+    /// <summary>拖箭头时按光标高亮其上的敌人（杀戮尖塔落点高亮）；null 清除。</summary>
+    private void HighlightEnemyAt(Vector2? pos)
+    {
+        foreach (var pv in _enemyPortraits.Values) pv.Highlight(false);
+        if (pos is Vector2 p)
+        {
+            var eid = PickEnemyAt(p);
+            if (eid is int id && _enemyPortraits.TryGetValue(id, out var pv)) pv.Highlight(true);
+        }
+    }
+
+    /// <summary>短暂提示（无目标等）。</summary>
+    private void Toast(string msg)
+    {
+        var label = new Label { Text = msg, ZIndex = 80, Position = new Vector2(_viewSize.X / 2f - 180, 120), Size = new Vector2(360, 30), HorizontalAlignment = HorizontalAlignment.Center };
+        label.AddThemeFontSizeOverride("font_size", 15);
+        label.AddThemeColorOverride("font_color", UiPalette.WarnOrange);
+        var bg = new StyleBoxFlat { BgColor = UiPalette.PanelBg with { A = 0.9f } };
+        bg.SetCornerRadiusAll(4); bg.ContentMarginLeft = 8; bg.ContentMarginRight = 8;
+        label.AddThemeStyleboxOverride("normal", bg);
+        _fxLayer.AddChild(label);
+        var tw = CreateTween();
+        tw.TweenInterval(1.2);
+        tw.TweenProperty(label, "modulate:a", 0f, 0.5);
+        tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(label)) label.QueueFree(); }));
     }
 
     /// <summary>卡牌目标弹窗（文档：屏幕中心显示可选卡牌，背景透明灰）。</summary>
@@ -823,6 +843,7 @@ public partial class GameView : Control
         _hoverAction = action;
         _hoverEvents = State.Preview(action);
         RenderHover();
+        _hoveredCard?.ShowPreview(BuildPreviewText()); // 预计后果显示在牌上方
         HighlightAffected(action); // 近战牌悬停：高亮将受影响的敌人
     }
 
@@ -831,6 +852,7 @@ public partial class GameView : Control
         _hoverAction = null;
         _hoverEvents = null;
         RenderHover();
+        _hoveredCard?.HidePreview();
         foreach (var pv in _enemyPortraits.Values) pv.Highlight(false);
     }
 
@@ -875,15 +897,10 @@ public partial class GameView : Control
     }
 
     // ------------------------------------------------------------------ 预览/辅助
-    private void RenderPreview()
+    /// <summary>构建预计后果文本（悬浮在牌上方）。</summary>
+    private string BuildPreviewText()
     {
-        if (_hoverAction is not PlayerAction a || _hoverEvents is null)
-        {
-            _previewLabel.Text = "（悬停手牌 / 整备 / 空过 查看预计后果）";
-            _previewLabel.AddThemeColorOverride("font_color", Colors.DimGray);
-            return;
-        }
-        _previewLabel.RemoveThemeColorOverride("font_color");
+        if (_hoverAction is not PlayerAction a || _hoverEvents is null) return "";
         var c = State?.Characters.Find(x => x.Id == a.CharacterId);
         int occ = ActionCost(a);
         int len = State?.Timeline.Length ?? 1;
@@ -919,13 +936,12 @@ public partial class GameView : Control
         if (triggers.Count > 0) parts.Add("触发: " + string.Join(", ", triggers));
         if (charDmg.Count > 0) parts.Add("受伤: " + string.Join(", ", charDmg));
         if (enemyDmg > 0) parts.Add($"敌-{enemyDmg}");
-        // 文档 §五：数值预览实时含修正（附魔/易伤/蓄力），旁注"已含修正"
         if (_hoverEvents.Any(e => e is GameEvent.EnchantmentApplied)
             || _hoverEvents.OfType<GameEvent.EnemyTriggered>().Any(et => State?.Enemies.Find(x => x.Id == et.EnemyId)?.Charge > 0))
             parts.Add("（已含修正）");
         if (_hoverEvents.Any(e => e is GameEvent.CharacterDied)) parts.Add("【角色阵亡】");
         if (_hoverEvents.Any(e => e is GameEvent.EnemyDied)) parts.Add("【敌死】");
-        _previewLabel.Text = string.Join("   ", parts);
+        return string.Join("\n", parts);
     }
 
     private int ActionCost(PlayerAction a)
@@ -993,7 +1009,7 @@ public partial class GameView : Control
             GameEvent.DamageDealt dd => dd.TargetIsEnemy
                 ? $"    敌 {dd.TargetId} 受 {dd.Amount} 伤"
                 : $"       {CharName(dd.TargetId)} 受 {dd.Amount} 伤",
-            GameEvent.CardPlayed cp => $"▸ {CharName(cp.CharacterId)} 出牌",
+            GameEvent.CardPlayed cp => $"▸ {CharName(cp.CharacterId)} 出牌〔{CardName(cp.CardInstanceId, cp.CharacterId)}〕",
             GameEvent.PrepUsed pu => $"▸ {CharName(pu.CharacterId)} 整备（抽{pu.Drawn}）",
             GameEvent.CardsDrawn cd => $"    {CharName(cd.CharacterId)} 抽 {cd.Count}",
             GameEvent.PositionChanged pc => $"    {CharName(pc.CharacterId)} 位 {pc.From}→{pc.To}",
@@ -1009,6 +1025,14 @@ public partial class GameView : Control
 
     private string CharName(int id) => State?.Characters.Find(c => c.Id == id)?.Name ?? id.ToString();
     private string EnemyName(int id) => State?.Enemies.Find(e => e.Id == id)?.Name ?? id.ToString();
+    private string CardName(Guid instanceId, int charId)
+    {
+        var c = State?.Characters.Find(x => x.Id == charId);
+        return c?.Hand.Find(k => k.InstanceId == instanceId)?.Def.Name
+            ?? c?.DiscardPile.Find(k => k.InstanceId == instanceId)?.Def.Name
+            ?? c?.DrawPile.Find(k => k.InstanceId == instanceId)?.Def.Name
+            ?? "?";
+    }
 
     private static string KindText(EnemyKind k) => k switch
     {

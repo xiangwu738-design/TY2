@@ -28,6 +28,10 @@ public partial class CardView : Panel
     public TargetKind Targeting { get; set; } = TargetKind.None;
     /// <summary>给定全局坐标，返回其上的敌人 id（无则 null）。</summary>
     public Func<Vector2, int?>? TargetPicker { get; set; }
+    /// <summary>拖拽中：按光标全局坐标高亮其上的敌人（箭头落点预览）。</summary>
+    public Action<Vector2?>? OnEnemyHover;
+    /// <summary>无可选目标提示。</summary>
+    public Action? OnNoTarget;
 
     private Label _cost = null!;
     private Label _enchant = null!;
@@ -37,6 +41,7 @@ public partial class CardView : Panel
     private Label _type = null!;
     private Label _desc = null!;
     private ColorRect _rarity = null!;
+    private Label _tooltip = null!;
     private bool _built;
     private bool _hovering;
     private bool _dragging;
@@ -60,6 +65,15 @@ public partial class CardView : Panel
     {
         _built = true;
         PivotOffset = CardSize / 2f;
+        // 牌上方悬浮预计框（文档：预计后果显示在牌上面）
+        _tooltip = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, HorizontalAlignment = HorizontalAlignment.Center, ZIndex = 40, MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(-8, -78), Size = new Vector2(CardSize.X + 16, 72) };
+        _tooltip.AddThemeFontSizeOverride("font_size", 13);
+        _tooltip.AddThemeColorOverride("font_color", UiPalette.TextMain);
+        var tbg = new StyleBoxFlat { BgColor = UiPalette.PanelBg with { A = 0.92f }, BorderColor = UiPalette.GoldBorder with { A = 0.7f } };
+        tbg.SetBorderWidthAll(1); tbg.SetCornerRadiusAll(4); tbg.ContentMarginLeft = 6; tbg.ContentMarginRight = 6; tbg.ContentMarginTop = 3; tbg.ContentMarginBottom = 3;
+        _tooltip.AddThemeStyleboxOverride("normal", tbg);
+        AddChild(_tooltip);
+
         var vb = new VBoxContainer();
         vb.SetAnchorsPreset(LayoutPreset.FullRect);
         vb.OffsetLeft = 8; vb.OffsetTop = 8; vb.OffsetRight = -8; vb.OffsetBottom = -8;
@@ -160,6 +174,7 @@ public partial class CardView : Panel
             Position = localMouse - Size / 2f;                 // 无目标：卡牌跟手
         else
             Position = _origin + new Vector2(0, -170);          // 有目标：升到手牌区中央，箭头从这出发
+        if (Targeting == TargetKind.Enemy) OnEnemyHover?.Invoke(_dragPos); // 箭头落点高亮敌人
         QueueRedraw();
         if (!Godot.Input.IsMouseButtonPressed(MouseButton.Left))
             ResolveDrag();
@@ -171,12 +186,14 @@ public partial class CardView : Panel
         ZIndex = 0;
         Position = _origin; // 回到手牌原位
         QueueRedraw();
+        OnEnemyHover?.Invoke(null); // 清除高亮
         float dy = _dragPos.Y - _dragStart.Y;
         switch (Targeting)
         {
             case TargetKind.Enemy:
                 var eid = TargetPicker?.Invoke(_dragPos);
                 if (eid is int id) OnPlayTarget?.Invoke(this, id);
+                else OnNoTarget?.Invoke(); // 无可选目标提示（牌已回手牌）
                 break;
             case TargetKind.Card:
                 if (dy < -30) OnRequestCardTarget?.Invoke(this); // 向上托→弹窗选牌
@@ -186,6 +203,10 @@ public partial class CardView : Panel
                 break;
         }
     }
+
+    /// <summary>在牌上方显示预计后果文本（文档：预计后果显示在牌上面）。</summary>
+    public void ShowPreview(string text) { _tooltip.Text = text; _tooltip.Visible = true; }
+    public void HidePreview() => _tooltip.Visible = false;
 
     public override void _Draw()
     {

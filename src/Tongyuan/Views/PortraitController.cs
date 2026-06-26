@@ -62,22 +62,8 @@ public partial class PortraitController : Node2D
             _stateTimer -= (float)delta;
             if (_stateTimer <= 0) ToIdle();
         }
-
-        // 待机循环：轻微呼吸（占位，对应规格“待机状态循环播放几张立绘”）
-        if (IdleBreath && State == PortraitState.Idle)
-        {
-            float b = 1f + 0.03f * Mathf.Sin(_time * 2.2f);
-            if (Scale != new Vector2(b, b))
-            {
-                Scale = new Vector2(b, b);
-                QueueRedraw();
-            }
-        }
-        else if (Scale != Vector2.One)
-        {
-            Scale = Vector2.One;
-            QueueRedraw();
-        }
+        // 立绘不做呼吸感（按反馈），保持 Scale=1
+        if (Scale != Vector2.One) { Scale = Vector2.One; QueueRedraw(); }
     }
 
     public override void _Draw()
@@ -105,8 +91,8 @@ public partial class PortraitController : Node2D
         else
         {
             // 占位全身剪影：统一中性（不靠颜色/剪影区分角色；区分仅靠贴图）
-            DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), new Color(0.12f, 0.13f, 0.16f, 0.92f), filled: true);
-            DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), color with { A = 0.6f }, filled: false, 2f);
+            // 仅剪影 + 描边（去掉底色块）；信息写在下面（PortraitView）
+            DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), color with { A = 0.5f }, filled: false, 2f);
             var sil = new Color(0.34f, 0.36f, 0.40f, 0.75f);
             float headR = w * 0.16f;
             var head = new Vector2(0, -h / 2f + headR + 2);
