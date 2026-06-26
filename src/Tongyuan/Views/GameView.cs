@@ -155,7 +155,7 @@ public partial class GameView : Control
 
         vb.AddChild(topbar);
 
-        // 战场（居中：左右各加弹性间距，角色组和敌人组聚拢在视口中央）
+        // 战场（右偏：左侧大弹性空间 + 右侧小固定边距，整体向右推，左侧留出历史区空间）
         vb.AddChild(SectionLabel("战场（左=后排 ··· 前线⚔敌人 | 点头像切换当前角色）"));
         var battleWrapper = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var bLeft = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -163,7 +163,7 @@ public partial class GameView : Control
         _battleField = new HBoxContainer();
         _battleField.AddThemeConstantOverride("separation", 10);
         battleWrapper.AddChild(_battleField);
-        var bRight = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        var bRight = new Control { CustomMinimumSize = new Vector2(80, 0) };
         battleWrapper.AddChild(bRight);
         vb.AddChild(battleWrapper);
 
@@ -209,6 +209,7 @@ public partial class GameView : Control
     private Control? _modalBg;
     private CardView? _hoveredCard;
     private Control? _detailPopup;
+    private Control? _detailOverlay;
     private float _pendingTimelineShift;
 
     private static Label SectionLabel(string text)
@@ -596,16 +597,16 @@ public partial class GameView : Control
         tw.TweenCallback(Callable.From(() => { if (IsInstanceValid(label)) label.QueueFree(); }));
     }
 
-    /// <summary>卡牌目标弹窗（文档：屏幕中心显示可选卡牌，背景透明灰）。</summary>
+    /// <summary>卡牌目标弹窗（屏幕中心显示可选卡牌，挂在 fxLayer 最顶层，灰色透明背景）。</summary>
     private void OpenCardTargetModal(Character c, Card enchCard)
     {
         if (_modalBg is not null) { _modalBg.QueueFree(); _modalBg = null; }
-        _modalBg = new Control { MouseFilter = MouseFilterEnum.Stop };
+        _modalBg = new Control { MouseFilter = MouseFilterEnum.Stop, ZIndex = 60 };
         _modalBg.SetAnchorsPreset(LayoutPreset.FullRect);
-        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.55f), MouseFilter = MouseFilterEnum.Stop };
+        var dim = new ColorRect { Color = new Color(0.12f, 0.12f, 0.18f, 0.70f), MouseFilter = MouseFilterEnum.Stop };
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         _modalBg.AddChild(dim);
-        AddChild(_modalBg);
+        _fxLayer.AddChild(_modalBg);
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -684,11 +685,7 @@ public partial class GameView : Control
         hintL.AddThemeColorOverride("font_color", UiPalette.TextDim);
         vb.AddChild(hintL);
         panel.AddChild(vb);
-        _fxLayer.AddChild(panel);
-        _detailPopup = panel;
-        float px = Math.Min(screenPos.X + 16, _viewSize.X - 290);
-        float py = Math.Clamp(screenPos.Y - 80, 8, _viewSize.Y - 260);
-        panel.Position = new Vector2(px, py);
+        AddDetailPopup(panel, new Vector2(Math.Min(screenPos.X + 16, _viewSize.X - 290), Math.Clamp(screenPos.Y - 80, 8, _viewSize.Y - 260)));
     }
 
     private void ShowEnemyDetail(List<Enemy> enemies, Vector2 screenPos)
@@ -737,25 +734,30 @@ public partial class GameView : Control
         hintL.AddThemeColorOverride("font_color", UiPalette.TextDim);
         vb.AddChild(hintL);
         panel.AddChild(vb);
+        AddDetailPopup(panel, new Vector2(Math.Min(screenPos.X + 8, _viewSize.X - 290), Math.Clamp(screenPos.Y, 8, _viewSize.Y - 320)));
+    }
+
+    private void AddDetailPopup(PanelContainer panel, Vector2 pos)
+    {
+        // 透明覆盖层：点击弹窗外任意处关闭
+        _detailOverlay = new Control { MouseFilter = MouseFilterEnum.Stop, ZIndex = 75 };
+        _detailOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
+        _detailOverlay.GuiInput += e => { if (e is InputEventMouseButton mb && mb.Pressed) CloseDetailPopup(); };
+        _fxLayer.AddChild(_detailOverlay);
+        // 弹窗本身：点击也关闭（内部无交互元素）
+        panel.ZIndex = 80;
+        panel.GuiInput += e => { if (e is InputEventMouseButton mb && mb.Pressed) CloseDetailPopup(); };
         _fxLayer.AddChild(panel);
         _detailPopup = panel;
-        float px = Math.Min(screenPos.X + 8, _viewSize.X - 290);
-        float py = Math.Clamp(screenPos.Y, 8, _viewSize.Y - 320);
-        panel.Position = new Vector2(px, py);
+        panel.Position = pos;
     }
 
     private void CloseDetailPopup()
     {
         if (_detailPopup is not null && IsInstanceValid(_detailPopup)) _detailPopup.QueueFree();
+        if (_detailOverlay is not null && IsInstanceValid(_detailOverlay)) _detailOverlay.QueueFree();
         _detailPopup = null;
-    }
-
-    public override void _UnhandledInput(InputEvent e)
-    {
-        if (_detailPopup is null) return;
-        bool dismiss = (e is InputEventMouseButton mb && mb.Pressed)
-                    || (e is InputEventKey k && k.Pressed && k.Keycode == Key.Escape);
-        if (dismiss) CloseDetailPopup();
+        _detailOverlay = null;
     }
 
     private static string BuildChainText(Enemy enemy)

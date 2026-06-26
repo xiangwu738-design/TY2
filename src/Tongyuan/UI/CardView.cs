@@ -218,9 +218,8 @@ public partial class CardView : Panel
         }
     }
 
-    /// <summary>在牌上方显示预计后果文本（文档：预计后果显示在牌上面）。</summary>
-    public void ShowPreview(string text) { _tooltip.Text = text; _tooltip.Visible = true; }
-    public void HidePreview() => _tooltip.Visible = false;
+    public void ShowPreview(string text) { } // 暂时禁用
+    public void HidePreview() { }
 
     public override void _Draw()
     {
