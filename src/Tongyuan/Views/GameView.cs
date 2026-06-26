@@ -97,7 +97,7 @@ public partial class GameView : Control
         margin.AddChild(scroll);
 
         // 主区(左) + 日志侧边栏(右)
-        var row = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        var row = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ExpandFill };
         row.AddThemeConstantOverride("separation", 12);
         scroll.AddChild(row);
 
@@ -155,7 +155,7 @@ public partial class GameView : Control
 
         vb.AddChild(topbar);
 
-        // 战场（右偏：左侧大弹性空间 + 右侧小固定边距，整体向右推，左侧留出历史区空间）
+        // 战场（居中：左右各加弹性间距，角色组和敌人组聚拢在可用区中央）
         vb.AddChild(SectionLabel("战场（左=后排 ··· 前线⚔敌人 | 点头像切换当前角色）"));
         var battleWrapper = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var bLeft = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -163,7 +163,7 @@ public partial class GameView : Control
         _battleField = new HBoxContainer();
         _battleField.AddThemeConstantOverride("separation", 10);
         battleWrapper.AddChild(_battleField);
-        var bRight = new Control { CustomMinimumSize = new Vector2(80, 0) };
+        var bRight = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         battleWrapper.AddChild(bRight);
         vb.AddChild(battleWrapper);
 
