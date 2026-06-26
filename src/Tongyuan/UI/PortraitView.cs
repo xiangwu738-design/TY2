@@ -28,7 +28,7 @@ public partial class PortraitView : PanelContainer
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(124, 116);
+        CustomMinimumSize = new Vector2(132, 250);
         if (!_built) Build();
         MouseFilter = MouseFilterEnum.Stop;
     }
@@ -36,35 +36,32 @@ public partial class PortraitView : PanelContainer
     private void Build()
     {
         _built = true;
-        var vb = new VBoxContainer();
-        vb.AddThemeConstantOverride("separation", 1);
-        AddChild(vb);
+        // 全身立绘（顶部，居中）——Node2D 手动定位（不进 VBox 流式）
+        Portrait = new PortraitController { DrawW = 76, DrawH = 150, Position = new Vector2(66, 82) };
+        AddChild(Portrait);
 
-        // 立绘（顶部居中）
-        Portrait = new PortraitController { DrawW = 40, DrawH = 44, Position = new Vector2(62, 26) };
-        vb.AddChild(Portrait);
+        // 信息区（立绘下方，手动定位）
+        _name = new Label { Position = new Vector2(0, 168), Size = new Vector2(132, 20), HorizontalAlignment = HorizontalAlignment.Center };
+        _name.AddThemeFontSizeOverride("font_size", 14);
+        AddChild(_name);
 
-        _name = new Label { HorizontalAlignment = HorizontalAlignment.Center };
-        _name.AddThemeFontSizeOverride("font_size", 13);
-        vb.AddChild(_name);
-
-        _sub = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+        _sub = new Label { Position = new Vector2(0, 188), Size = new Vector2(132, 16), HorizontalAlignment = HorizontalAlignment.Center };
         _sub.AddThemeFontSizeOverride("font_size", 11);
         _sub.AddThemeColorOverride("font_color", new Color(0.85f, 0.7f, 0.4f));
-        vb.AddChild(_sub);
+        AddChild(_sub);
 
-        _hp = new ProgressBar { MinValue = 0, CustomMinimumSize = new Vector2(108, 0) };
-        vb.AddChild(_hp);
+        _hp = new ProgressBar { Position = new Vector2(12, 206), Size = new Vector2(108, 12), MinValue = 0 };
+        AddChild(_hp);
 
-        _hpText = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+        _hpText = new Label { Position = new Vector2(0, 220), Size = new Vector2(132, 14), HorizontalAlignment = HorizontalAlignment.Center };
         _hpText.AddThemeFontSizeOverride("font_size", 10);
-        vb.AddChild(_hpText);
+        AddChild(_hpText);
 
-        _status = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+        _status = new Label { Position = new Vector2(0, 234), Size = new Vector2(132, 14), HorizontalAlignment = HorizontalAlignment.Center };
         _status.AddThemeFontSizeOverride("font_size", 10);
-        vb.AddChild(_status);
+        AddChild(_status);
 
-        // 被瞄准脉动光晕（文档 §七：被瞄准脉动，警示色缓慢呼吸）
+        // 被瞄准脉动光晕
         _aimGlow = new ColorRect { Color = new Color(UiPalette.WarnOrange.R, UiPalette.WarnOrange.G, UiPalette.WarnOrange.B, 0f), MouseFilter = MouseFilterEnum.Ignore };
         _aimGlow.SetAnchorsPreset(LayoutPreset.FullRect);
         _aimGlow.Visible = false;
@@ -92,7 +89,6 @@ public partial class PortraitView : PanelContainer
         Portrait.BoundEnemyId = -1;
         Portrait.IdleBreath = c.IsAlive;
         if (!c.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
-        Portrait.Position = new Vector2(62, 26);
 
         _name.Text = (isActive ? "▶ " : "") + c.Name;
         _name.AddThemeColorOverride("font_color", UiPalette.ColorOf(c.Color).Lightened(0.2f));

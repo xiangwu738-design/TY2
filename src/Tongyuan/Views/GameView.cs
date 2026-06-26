@@ -200,6 +200,7 @@ public partial class GameView : Control
 
     private Control _fxLayer = null!;
     private ColorRect _pointerGlow = null!;
+    private Control? _modalBg;
 
     private static Label SectionLabel(string text)
     {
@@ -487,13 +488,75 @@ public partial class GameView : Control
         var action = ActionForCard(c, card);
         view.OnHovered += _ => Hover(action);
         view.OnUnhovered += _ => ClearHover();
+        view.TargetPicker = PickEnemyAt;
         int id = c.Id;
-        view.OnClicked += _ =>
-        {
-            if (NeedsTarget(def)) BeginTargeting(id, card);
-            else Play(action);
-        };
+        // 目标类型：远程/代码卡→拖箭头选敌；力量附魔具体牌→向上托弹窗选牌；其余→向上托出牌
+        if (def.Effect == EffectKind.AttackDamage && (def.DamageType == DamageType.Ranged || def.NeedsTargetEnemy))
+            view.Targeting = CardView.TargetKind.Enemy;
+        else if (def.Effect == EffectKind.ApplyEnchantment && def.EnchantType == EnchantmentType.Power && def.EnchantScope == EnchantmentScope.SpecificCard)
+            view.Targeting = CardView.TargetKind.Card;
+        else
+            view.Targeting = CardView.TargetKind.None;
+
+        view.OnPlay += _ => Play(action);
+        view.OnPlayTarget += (_, eid) => Play(new PlayerAction(id, ActionType.PlayCard, card.InstanceId, TargetEnemyId: eid));
+        view.OnRequestCardTarget += _ => OpenCardTargetModal(c, card);
         return view;
+    }
+
+    /// <summary>全局坐标是否落在某敌人头像上，返回其 id（杀戮尖塔箭头落点）。</summary>
+    private int? PickEnemyAt(Vector2 globalPos)
+    {
+        foreach (var (eid, pv) in _enemyPortraits)
+        {
+            if (pv.GetGlobalRect().HasPoint(globalPos)) return eid;
+        }
+        return null;
+    }
+
+    /// <summary>卡牌目标弹窗（文档：屏幕中心显示可选卡牌，背景透明灰）。</summary>
+    private void OpenCardTargetModal(Character c, Card enchCard)
+    {
+        if (_modalBg is not null) { _modalBg.QueueFree(); _modalBg = null; }
+        _modalBg = new Control { MouseFilter = MouseFilterEnum.Stop };
+        _modalBg.SetAnchorsPreset(LayoutPreset.FullRect);
+        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.55f), MouseFilter = MouseFilterEnum.Stop };
+        dim.SetAnchorsPreset(LayoutPreset.FullRect);
+        _modalBg.AddChild(dim);
+        AddChild(_modalBg);
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(LayoutPreset.FullRect);
+        var vb = new VBoxContainer();
+        vb.AddThemeConstantOverride("separation", 16);
+        vb.AddChild(new Label { Text = "选择一张手牌挂力量附魔", HorizontalAlignment = HorizontalAlignment.Center });
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 20);
+        foreach (var hc in c.Hand)
+        {
+            if (hc.InstanceId == enchCard.InstanceId) continue;
+            var cv = new CardView();
+            cv.Setup(hc, c);
+            cv.DragPlay = false; // 弹窗：点击选牌
+            var target = hc;
+            cv.OnClicked += _ =>
+            {
+                Play(new PlayerAction(c.Id, ActionType.PlayCard, enchCard.InstanceId, TargetCardInstanceId: target.InstanceId));
+                CloseCardTargetModal();
+            };
+            row.AddChild(cv);
+        }
+        vb.AddChild(row);
+        center.AddChild(vb);
+        _modalBg.AddChild(center);
+
+        // 点暗背景取消
+        dim.GuiInput += e => { if (e is InputEventMouseButton mb && mb.Pressed) CloseCardTargetModal(); };
+    }
+
+    private void CloseCardTargetModal()
+    {
+        if (_modalBg is not null) { _modalBg.QueueFree(); _modalBg = null; }
     }
 
     private static Color CardBgColor(CardDef def) => def.Type switch

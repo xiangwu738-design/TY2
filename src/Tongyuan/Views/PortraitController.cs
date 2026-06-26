@@ -24,8 +24,18 @@ public partial class PortraitController : Node2D
 
     private float _stateTimer;   // Skill/Hit 剩余时长，到 0 回 Idle
     private float _time;         // 累计时间，驱动呼吸
+    private Label _hint = null!;
 
-    public override void _Ready() => QueueRedraw();
+    public override void _Ready()
+    {
+        // 立绘占位文字辅助提示（Label 子节点，避开字体 API）
+        _hint = new Label { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _hint.AddThemeFontSizeOverride("font_size", 11);
+        _hint.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.3f));
+        _hint.HorizontalAlignment = HorizontalAlignment.Center;
+        AddChild(_hint);
+        QueueRedraw();
+    }
 
     public override void _Process(double delta)
     {
@@ -59,19 +69,44 @@ public partial class PortraitController : Node2D
     {
         var color = State switch
         {
-            PortraitState.Idle => new Color(0.3f, 0.6f, 0.9f),   // 蓝
-            PortraitState.Skill => new Color(0.95f, 0.78f, 0.2f), // 黄
-            PortraitState.Hit => new Color(0.92f, 0.3f, 0.3f),    // 红
-            PortraitState.Down => new Color(0.42f, 0.42f, 0.42f), // 灰
+            PortraitState.Idle => new Color(0.34f, 0.40f, 0.52f),  // 待机：冷灰蓝
+            PortraitState.Skill => new Color(0.95f, 0.78f, 0.2f),   // 施法：金
+            PortraitState.Hit => new Color(0.92f, 0.3f, 0.3f),      // 受击：红
+            PortraitState.Down => new Color(0.30f, 0.30f, 0.32f),   // 倒下：深灰
             _ => new Color(0.5f, 0.5f, 0.5f),
         };
-        // 待机时轻微明度循环（色相循环占位）
         if (State == PortraitState.Idle && IdleBreath)
-            color = color.Lightened(0.04f + 0.04f * Mathf.Sin(_time * 2.2f));
+            color = color.Lightened(0.05f + 0.05f * Mathf.Sin(_time * 2.2f));
 
-        var rect = new Rect2(-DrawW / 2f, -DrawH / 2f, DrawW, DrawH);
-        DrawRect(rect, color, filled: true);
-        DrawRect(rect, new Color(1, 1, 1, 0.5f), filled: false); // 描边
+        float w = DrawW, h = DrawH;
+        // 全身像占位：暗底板
+        DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), new Color(0.10f, 0.11f, 0.14f, 0.9f), filled: true);
+        DrawRect(new Rect2(-w / 2f, -h / 2f, w, h), color with { A = 0.8f }, filled: false, 2f);
+
+        // 全身剪影：头(圆) + 躯干(梯形/矩形) + 腿
+        var sil = color with { A = 0.55f };
+        float headR = w * 0.16f;
+        var head = new Vector2(0, -h / 2f + headR + 2);
+        DrawCircle(head, headR, sil);
+        float bodyTop = head.Y + headR;
+        float bodyH = h * 0.42f;
+        DrawRect(new Rect2(-w * 0.20f, bodyTop, w * 0.40f, bodyH), sil, filled: true);     // 躯干
+        DrawRect(new Rect2(-w * 0.16f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true); // 左腿
+        DrawRect(new Rect2(w * 0.04f, bodyTop + bodyH, w * 0.12f, h * 0.28f), sil, filled: true);  // 右腿
+
+        // 文字辅助提示：状态名 + "立绘占位"（Label 子节点定位在剪影底部）
+        string stateTxt = State switch
+        {
+            PortraitState.Idle => "待机", PortraitState.Skill => "施法",
+            PortraitState.Hit => "受击", PortraitState.Down => "倒下", _ => "",
+        };
+        if (_hint is not null)
+        {
+            _hint.Text = $"立绘占位·{stateTxt}";
+            _hint.Position = new Vector2(-w / 2f, h / 2f - 14);
+            _hint.Size = new Vector2(w, 14);
+            _hint.AddThemeColorOverride("font_color", color with { A = 0.85f });
+        }
     }
 
     public void PlaySkill(float duration = 0.45f) => Set(PortraitState.Skill, duration);

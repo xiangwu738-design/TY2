@@ -12,9 +12,22 @@ public partial class CardView : Panel
 {
     public Card? Card { get; private set; }
     public Character? Owner { get; private set; }
-    public Action<CardView>? OnClicked;
+    public Action<CardView>? OnClicked;       // 弹窗/奖励等点击场景
     public Action<CardView>? OnHovered;
     public Action<CardView>? OnUnhovered;
+    /// <summary>战斗手牌=true 走拖拽；弹窗/奖励=false 走点击。</summary>
+    public bool DragPlay { get; set; } = true;
+    /// <summary>无目标：向上托出牌。</summary>
+    public Action<CardView>? OnPlay;
+    /// <summary>敌人目标：拖箭头到敌人出牌。</summary>
+    public Action<CardView, int>? OnPlayTarget;
+    /// <summary>卡牌目标：向上托→弹窗选牌。</summary>
+    public Action<CardView>? OnRequestCardTarget;
+
+    public enum TargetKind { None, Enemy, Card }
+    public TargetKind Targeting { get; set; } = TargetKind.None;
+    /// <summary>给定全局坐标，返回其上的敌人 id（无则 null）。</summary>
+    public Func<Vector2, int?>? TargetPicker { get; set; }
 
     private Label _cost = null!;
     private Label _enchant = null!;
@@ -25,6 +38,9 @@ public partial class CardView : Panel
     private ColorRect _rarity = null!;
     private bool _built;
     private bool _hovering;
+    private bool _dragging;
+    private Vector2 _dragStart;
+    private Vector2 _dragPos;
 
     public static readonly Vector2 CardSize = new(184, 268);
 
@@ -35,6 +51,7 @@ public partial class CardView : Panel
         MouseFilter = MouseFilterEnum.Stop;
         MouseEntered += () => { _hovering = true; OnHovered?.Invoke(this); AnimateHover(true); };
         MouseExited += () => { _hovering = false; OnUnhovered?.Invoke(this); AnimateHover(false); };
+        SetProcess(true);
     }
 
     private void BuildInternals()
@@ -114,7 +131,60 @@ public partial class CardView : Panel
     public override void _GuiInput(InputEvent e)
     {
         if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
-            OnClicked?.Invoke(this);
+        {
+            if (!DragPlay) { OnClicked?.Invoke(this); return; } // 弹窗/奖励：直接点击
+            // 战斗手牌：开始拖拽（杀戮尖塔制：无目标向上托、有目标拖箭头）
+            _dragging = true;
+            _dragStart = GetGlobalMousePosition();
+            _dragPos = _dragStart;
+            ZIndex = 20;
+            QueueRedraw();
+        }
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!_dragging) return;
+        _dragPos = GetGlobalMousePosition();
+        QueueRedraw();
+        if (!Godot.Input.IsMouseButtonPressed(MouseButton.Left))
+            ResolveDrag();
+    }
+
+    private void ResolveDrag()
+    {
+        _dragging = false;
+        ZIndex = 0;
+        QueueRedraw();
+        float dy = _dragPos.Y - _dragStart.Y;
+        switch (Targeting)
+        {
+            case TargetKind.Enemy:
+                var eid = TargetPicker?.Invoke(_dragPos);
+                if (eid is int id) OnPlayTarget?.Invoke(this, id);
+                break;
+            case TargetKind.Card:
+                if (dy < -30) OnRequestCardTarget?.Invoke(this); // 向上托→弹窗选牌
+                break;
+            default:
+                if (dy < -30) OnPlay?.Invoke(this); // 无目标：向上托出牌
+                break;
+        }
+    }
+
+    public override void _Draw()
+    {
+        if (!_dragging || Targeting != TargetKind.Enemy) return;
+        // 箭头：从卡牌中心到光标（局部坐标）
+        var from = Size / 2f;
+        var to = GetGlobalMousePosition() - GlobalPosition;
+        DrawLine(from, to, UiPalette.VulnGold with { A = 0.9f }, 3f);
+        // 箭头头
+        var dir = (to - from).Normalized();
+        var perp = new Vector2(-dir.Y, dir.X);
+        var head = to;
+        DrawLine(head, head - dir * 14 + perp * 6, UiPalette.VulnGold, 3f);
+        DrawLine(head, head - dir * 14 - perp * 6, UiPalette.VulnGold, 3f);
     }
 
     /// <summary>汇总卡牌附魔为徽标文本（力+N / 易+N×K / 蓄+N）。</summary>

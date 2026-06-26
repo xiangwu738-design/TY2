@@ -67,6 +67,7 @@ public partial class RewardScreen : Control
             var card = new Card { Def = def };
             var cv = new CardView();
             cv.Setup(card, null);
+            cv.DragPlay = false; // 奖励：点击选牌
             var picked = def;
             cv.OnClicked += _ =>
             {
