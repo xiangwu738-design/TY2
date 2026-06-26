@@ -705,9 +705,21 @@ public partial class GameView : Control
                     ? (_enemyPortraits.TryGetValue(dd.TargetId, out var ep) ? ep : null)
                     : (_charPortraits.TryGetValue(dd.TargetId, out var cp) ? cp : null);
                 if (pv is not null) _pendingDmg.Add((pv, dd.Amount, dd.TargetIsEnemy));
+                if (!dd.TargetIsEnemy && dd.Amount > 0) Shake(); // 角色受击屏震（文档 §七）
             }
         }
         if (_pendingDmg.Count > 0) CallDeferred(MethodName.SpawnPendingDamageNumbers);
+    }
+
+    /// <summary>屏震（文档 §七：受击→屏震）：_margin 短促抖动后归零。</summary>
+    private void Shake()
+    {
+        if (_margin is null) return;
+        var tw = CreateTween();
+        tw.TweenProperty(_margin, "position", new Vector2(-5, 2), 0.04f);
+        tw.TweenProperty(_margin, "position", new Vector2(5, -2), 0.04f);
+        tw.TweenProperty(_margin, "position", new Vector2(-3, 1), 0.04f);
+        tw.TweenProperty(_margin, "position", Vector2.Zero, 0.05f);
     }
 
     private readonly List<(PortraitView View, int Amount, bool Enemy)> _pendingDmg = new();

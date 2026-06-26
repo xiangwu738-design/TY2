@@ -20,6 +20,10 @@ public partial class PortraitView : PanelContainer
     private ProgressBar _hp = null!;
     private Label _hpText = null!;
     private Label _status = null!;
+    private ColorRect _aimGlow = null!;
+    private ColorRect _flash = null!;
+    private bool _aimed;
+    private float _time;
     private bool _built;
 
     public override void _Ready()
@@ -59,6 +63,26 @@ public partial class PortraitView : PanelContainer
         _status = new Label { HorizontalAlignment = HorizontalAlignment.Center };
         _status.AddThemeFontSizeOverride("font_size", 10);
         vb.AddChild(_status);
+
+        // 被瞄准脉动光晕（文档 §七：被瞄准脉动，警示色缓慢呼吸）
+        _aimGlow = new ColorRect { Color = new Color(UiPalette.WarnOrange.R, UiPalette.WarnOrange.G, UiPalette.WarnOrange.B, 0f), MouseFilter = MouseFilterEnum.Ignore };
+        _aimGlow.SetAnchorsPreset(LayoutPreset.FullRect);
+        _aimGlow.Visible = false;
+        AddChild(_aimGlow);
+        // 受击闪白
+        _flash = new ColorRect { Color = new Color(1, 1, 1, 0), MouseFilter = MouseFilterEnum.Ignore };
+        _flash.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(_flash);
+    }
+
+    public override void _Process(double delta)
+    {
+        _time += (float)delta;
+        if (_aimed && _aimGlow.Visible)
+        {
+            float a = 0.18f + 0.18f * Mathf.Sin(_time * 4f); // 缓慢呼吸
+            _aimGlow.Color = new Color(UiPalette.WarnOrange.R, UiPalette.WarnOrange.G, UiPalette.WarnOrange.B, a);
+        }
     }
 
     public void SetupCharacter(Character c, bool isActive, bool aimed)
@@ -81,6 +105,8 @@ public partial class PortraitView : PanelContainer
         var bg = UiPalette.ColorOf(c.Color).Darkened(isActive ? 0.45f : 0.72f);
         var border = aimed ? UiPalette.WarnOrange : (isActive ? Colors.White : UiPalette.ColorOf(c.Color));
         ApplyStyle(bg, border, 3);
+        _aimed = aimed;
+        _aimGlow.Visible = aimed;
     }
 
     public void SetupEnemy(Enemy e, bool clickable, bool aimed)
@@ -108,9 +134,27 @@ public partial class PortraitView : PanelContainer
         var bg = clickable ? new Color(0.30f, 0.16f, 0.10f) : new Color(0.20f, 0.10f, 0.10f);
         var border = clickable ? UiPalette.VulnGold : (aimed ? UiPalette.WarnOrange : new Color(0.85f, 0.35f, 0.35f));
         ApplyStyle(bg, border, clickable ? 3 : 3);
+        _aimed = false; // 敌人不做被瞄准脉动
+        _aimGlow.Visible = false;
     }
 
-    public void OnEvent(GameEvent ev) => Portrait.OnEvent(ev);
+    public void OnEvent(GameEvent ev)
+    {
+        Portrait.OnEvent(ev);
+        if (ev is GameEvent.DamageDealt dd && dd.Amount > 0)
+        {
+            bool me = dd.TargetIsEnemy ? dd.TargetId == Portrait.BoundEnemyId : dd.TargetId == Portrait.BoundCharacterId;
+            if (me) Flash();
+        }
+    }
+
+    /// <summary>受击闪白（文档 §七：闪白）。</summary>
+    private void Flash()
+    {
+        _flash.Color = new Color(1, 1, 1, 0.75f);
+        var tw = CreateTween();
+        tw.TweenProperty(_flash, "color:a", 0f, 0.22f).SetTrans(Tween.TransitionType.Cubic);
+    }
 
     private void ApplyStyle(Color bg, Color border, int w)
     {
