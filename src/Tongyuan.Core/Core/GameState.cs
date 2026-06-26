@@ -120,11 +120,12 @@ public sealed class GameState
     /// <summary>逐格结算 ①②：敌人节点触发，护盾吸收。</summary>
     private void SettleEnemyAndShield(int slot)
     {
-        var enemy = Timeline.EnemyAt(slot);
-        if (enemy is null || !enemy.IsAlive) return;
-        // 行动链：按链执行，链尽循环（规格：理论可无限→过长用循环）
-        var act = enemy.AdvanceChain();
-        ExecuteEnemyAction(enemy, act);
+        foreach (var enemy in Timeline.EnemiesAt(slot))
+        {
+            if (!enemy.IsAlive) continue;
+            var act = enemy.AdvanceChain();
+            ExecuteEnemyAction(enemy, act);
+        }
     }
 
     private void ExecuteEnemyAction(Enemy enemy, EnemyAction act)

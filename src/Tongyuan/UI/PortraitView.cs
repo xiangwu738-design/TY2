@@ -145,7 +145,7 @@ public partial class PortraitView : Panel
 
         _name.Text = e.IsAlive ? e.Name : $"{e.Name}×";
         _name.AddThemeColorOverride("font_color", new Color(1f, 0.6f, 0.6f));
-        _sub.Text = $"{UiPalette.KindText(e.Kind)} · {IntentText(e)}";
+        _sub.Text = $"格{e.NodeSlot} · {UiPalette.KindText(e.Kind)} · {IntentText(e)}";
         _hp.MaxValue = e.Hp > 0 ? e.Hp : 1;
         _hp.Value = e.Hp;
         _hpText.Text = $"HP {e.Hp}";

@@ -15,6 +15,7 @@ public partial class CardView : Panel
     public Action<CardView>? OnClicked;       // 弹窗/奖励等点击场景
     public Action<CardView>? OnHovered;
     public Action<CardView>? OnUnhovered;
+    public Action<CardView, Vector2>? OnRightClicked;
     /// <summary>战斗手牌=true 走拖拽；弹窗/奖励=false 走点击。</summary>
     public bool DragPlay { get; set; } = true;
     /// <summary>无目标：向上托出牌。</summary>
@@ -48,6 +49,7 @@ public partial class CardView : Panel
     private Vector2 _dragStart;
     private Vector2 _dragPos;
     private Vector2 _origin;
+    private int _baseZIndex;
 
     public static readonly Vector2 CardSize = new(184, 268);
 
@@ -150,17 +152,29 @@ public partial class CardView : Panel
         }
     }
 
+    public void SetBaseZIndex(int z)
+    {
+        _baseZIndex = z;
+        if (!_hovering && !_dragging) ZIndex = z;
+    }
+
     public override void _GuiInput(InputEvent e)
     {
-        if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+        if (e is InputEventMouseButton mb && mb.Pressed)
         {
-            if (!DragPlay) { OnClicked?.Invoke(this); return; } // 弹窗/奖励：直接点击
-            // 战斗手牌：开始拖拽
-            _dragging = true;
-            _origin = Position;
-            _dragStart = GetGlobalMousePosition();
-            _dragPos = _dragStart;
-            ZIndex = 20;
+            if (mb.ButtonIndex == MouseButton.Left)
+            {
+                if (!DragPlay) { OnClicked?.Invoke(this); return; }
+                _dragging = true;
+                _origin = Position;
+                _dragStart = GetGlobalMousePosition();
+                _dragPos = _dragStart;
+                ZIndex = 20;
+            }
+            else if (mb.ButtonIndex == MouseButton.Right)
+            {
+                OnRightClicked?.Invoke(this, GetGlobalMousePosition());
+            }
         }
     }
 
@@ -183,7 +197,7 @@ public partial class CardView : Panel
     private void ResolveDrag()
     {
         _dragging = false;
-        ZIndex = 0;
+        ZIndex = _baseZIndex;
         Position = _origin; // 回到手牌原位
         QueueRedraw();
         OnEnemyHover?.Invoke(null); // 清除高亮
@@ -260,9 +274,9 @@ public partial class CardView : Panel
 
     private void AnimateHover(bool hover)
     {
-        ZIndex = hover ? 10 : 0;
+        ZIndex = hover ? (_baseZIndex + 10) : _baseZIndex;
         var tw = CreateTween();
-        tw.TweenProperty(this, "scale", hover ? new Vector2(1.08f, 1.08f) : Vector2.One, 0.1f)
+        tw.TweenProperty(this, "scale", hover ? new Vector2(1.08f, 1.08f) : Vector2.One, 0.08f)
           .SetTrans(Tween.TransitionType.Sine);
     }
 }

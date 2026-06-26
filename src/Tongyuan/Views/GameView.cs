@@ -169,16 +169,16 @@ public partial class GameView : Control
 
         // 时间轴
         vb.AddChild(SectionLabel("时间轴 / 行动条（▶ 当前指针；彩=将推进·各角色色，红⚠=将触发）"));
-        var tlScroll = new ScrollContainer
+        var tlClip = new Control
         {
-            HorizontalScrollMode = ScrollContainer.ScrollMode.Auto,
-            VerticalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
             CustomMinimumSize = new Vector2(0, 108),
+            ClipContents = true,
         };
-        vb.AddChild(tlScroll);
+        vb.AddChild(tlClip);
         _timelineRow = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
         _timelineRow.AddThemeConstantOverride("separation", 4);
-        tlScroll.AddChild(_timelineRow);
+        tlClip.AddChild(_timelineRow);
 
         // 行动（牌）
         _activeLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -208,6 +208,8 @@ public partial class GameView : Control
     private ColorRect _pointerGlow = null!;
     private Control? _modalBg;
     private CardView? _hoveredCard;
+    private Control? _detailPopup;
+    private float _pendingTimelineShift;
 
     private static Label SectionLabel(string text)
     {
@@ -352,49 +354,76 @@ public partial class GameView : Control
         ClearChildren(_timelineRow);
         if (State is null) return;
         int len = State.Timeline.Length;
-        int start = State.Pointer;
+        int ptr = State.Pointer;
         var trav = TraversedSet();
         var trig = TriggeredPreviewSet();
         var pcolor = PreviewColor();
-        int show = Math.Min(12, len);
-        for (int i = 0; i < show; i++)
-        {
-            int cell = (start + i) % len; // 时间轴循环
-            _timelineRow.AddChild(MakeCell(cell, trav, trig, pcolor));
-        }
+        const int histCount = 4;  // 历史格（指针左侧，灰显）
+        const int futCount = 8;   // 未来格（指针右侧）
+        for (int i = histCount; i >= 1; i--)
+            _timelineRow.AddChild(MakeCell((ptr - i + len) % len, trav, trig, pcolor, isPast: true));
+        _timelineRow.AddChild(MakeCell(ptr, trav, trig, pcolor, isPast: false));
+        for (int i = 1; i <= futCount && i < len; i++)
+            _timelineRow.AddChild(MakeCell((ptr + i) % len, trav, trig, pcolor, isPast: false));
     }
 
-    private Control MakeCell(int cell, HashSet<int> trav, HashSet<int> trig, Color previewColor)
+    private Control MakeCell(int cell, HashSet<int> trav, HashSet<int> trig, Color previewColor, bool isPast = false)
     {
-        var p = new Panel { CustomMinimumSize = new Vector2(66, 96) };
-        if (cell == State!.Pointer) p.Name = "__ptr_cell__"; // 供指针光点定位
+        bool isPtr = cell == State!.Pointer;
+        var enemies = State.Timeline.EnemiesAt(cell).FindAll(e => e.IsAlive);
+        bool hasEnemy = enemies.Count > 0;
+
+        var p = new Panel { CustomMinimumSize = new Vector2(isPast ? 50 : 68, 96) };
+        if (isPtr) p.Name = "__ptr_cell__";
         var sb = new StyleBoxFlat();
         sb.SetCornerRadiusAll(4);
-        var bg = new Color(0.12f, 0.12f, 0.15f);
-        if (cell == State!.Pointer) bg = new Color(0.30f, 0.30f, 0.42f);
-        if (trav.Contains(cell)) bg = previewColor;
+        Color bg = isPast ? new Color(0.08f, 0.08f, 0.10f)
+                  : trav.Contains(cell) ? previewColor
+                  : hasEnemy ? new Color(0.28f, 0.12f, 0.10f)
+                  : isPtr ? new Color(0.22f, 0.22f, 0.35f)
+                  : new Color(0.12f, 0.12f, 0.15f);
         sb.BgColor = bg;
+        if (isPtr)
+        { sb.BorderColor = new Color(1f, 0.85f, 0.2f); sb.SetBorderWidthAll(3); }   // 黄框：当前格
+        else if (hasEnemy && !isPast)
+        { sb.BorderColor = enemies.Count > 1 ? new Color(1f, 0.55f, 0.2f) : new Color(0.9f, 0.28f, 0.28f); sb.SetBorderWidthAll(2); }
         p.AddThemeStyleboxOverride("panel", sb);
+
         var vb = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
         vb.AddThemeConstantOverride("separation", 2);
         p.AddChild(vb);
-        var l1 = new Label { Text = cell == State.Pointer ? $"▶格{cell}" : $"格{cell}" };
-        l1.AddThemeFontSizeOverride("font_size", 11);
+        var l1 = new Label { Text = isPtr ? $"▶{cell}" : $"{cell}" };
+        l1.AddThemeFontSizeOverride("font_size", isPast ? 9 : 11);
+        if (isPast) l1.AddThemeColorOverride("font_color", new Color(0.42f, 0.42f, 0.46f));
+        else if (isPtr) l1.AddThemeColorOverride("font_color", new Color(1f, 0.92f, 0.4f));
         vb.AddChild(l1);
-        var enemy = State.Timeline.EnemyAt(cell);
-        if (enemy is not null && enemy.IsAlive)
+
+        if (!isPast)
         {
-            var nl = new Label { Text = $"{KindText(enemy.Kind)}{enemy.EffectivePower}" };
-            nl.AddThemeFontSizeOverride("font_size", 12);
-            nl.AddThemeColorOverride("font_color", EnemyColor(enemy.Kind));
-            vb.AddChild(nl);
-        }
-        if (trig.Contains(cell))
-        {
-            var t = new Label { Text = "⚠触发" };
-            t.AddThemeColorOverride("font_color", new Color(1f, 0.35f, 0.35f));
-            t.AddThemeFontSizeOverride("font_size", 10);
-            vb.AddChild(t);
+            foreach (var enemy in enemies)
+            {
+                var nl = new Label { Text = $"{KindText(enemy.Kind)}{enemy.EffectivePower}" };
+                nl.AddThemeFontSizeOverride("font_size", 12);
+                nl.AddThemeColorOverride("font_color", EnemyColor(enemy.Kind));
+                vb.AddChild(nl);
+            }
+            if (trig.Contains(cell))
+            {
+                var t = new Label { Text = "⚠" };
+                t.AddThemeColorOverride("font_color", new Color(1f, 0.35f, 0.35f));
+                t.AddThemeFontSizeOverride("font_size", 13);
+                vb.AddChild(t);
+            }
+            if (hasEnemy)
+            {
+                p.MouseFilter = MouseFilterEnum.Stop;
+                var capturedEnemies = enemies;
+                p.GuiInput += ev =>
+                {
+                    if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Right)
+                        ShowEnemyDetail(capturedEnemies, p.GlobalPosition + new Vector2(0, p.Size.Y));
+                };
+            }
         }
         return p;
     }
@@ -462,6 +491,9 @@ public partial class GameView : Control
             float y = baseY + off * off * 4f;
             cv.Position = new Vector2(x, y);
             cv.Rotation = rot;
+            int baseZ = n > 1 ? n - Math.Abs(2 * i - (n - 1)) : 1;
+            cv.ZIndex = baseZ;
+            cv.SetBaseZIndex(baseZ);
             _handRow.AddChild(cv);
         }
 
@@ -484,6 +516,9 @@ public partial class GameView : Control
         view.OnUnhovered += v => { v.HidePreview(); if (_hoveredCard == v) _hoveredCard = null; ClearHover(); };
         view.Targeting = CardView.TargetKind.None;
         view.OnPlay += _ => Play(new PlayerAction(id, ActionType.UsePrep));
+        var capturedCard = card;
+        var capturedOwner = c;
+        view.OnRightClicked += (_, pos) => ShowCardDetail(capturedCard, capturedOwner, pos);
         return view;
     }
 
@@ -518,6 +553,9 @@ public partial class GameView : Control
         view.OnPlay += _ => Play(action);
         view.OnPlayTarget += (_, eid) => Play(new PlayerAction(id, ActionType.PlayCard, card.InstanceId, TargetEnemyId: eid));
         view.OnRequestCardTarget += _ => OpenCardTargetModal(c, card);
+        var capturedCard = card;
+        var capturedOwner = c;
+        view.OnRightClicked += (_, pos) => ShowCardDetail(capturedCard, capturedOwner, pos);
         return view;
     }
 
@@ -601,6 +639,157 @@ public partial class GameView : Control
     private void CloseCardTargetModal()
     {
         if (_modalBg is not null) { _modalBg.QueueFree(); _modalBg = null; }
+    }
+
+    // ------------------------------------------------------------------ 详情弹窗
+    private void ShowCardDetail(Card card, Character? owner, Vector2 screenPos)
+    {
+        CloseDetailPopup();
+        var panel = new PanelContainer { ZIndex = 80 };
+        var sb = new StyleBoxFlat { BgColor = UiPalette.PanelBg with { A = 0.97f }, BorderColor = UiPalette.GoldBorder };
+        sb.SetBorderWidthAll(2); sb.SetCornerRadiusAll(6);
+        sb.ContentMarginLeft = 14; sb.ContentMarginTop = 12; sb.ContentMarginRight = 14; sb.ContentMarginBottom = 12;
+        panel.AddThemeStyleboxOverride("panel", sb);
+        var vb = new VBoxContainer();
+        vb.AddThemeConstantOverride("separation", 5);
+        var nameL = new Label { Text = card.Def.Name };
+        nameL.AddThemeFontSizeOverride("font_size", 18);
+        vb.AddChild(nameL);
+        string typeTag = card.Def.Type == CardType.Attack ? CardDef.DamageText(card.Def.DamageType) : card.Def.Type.ToString();
+        var costTypeL = new Label { Text = $"费用 {card.Def.Cost}  ·  {typeTag}" };
+        costTypeL.AddThemeFontSizeOverride("font_size", 12);
+        costTypeL.AddThemeColorOverride("font_color", UiPalette.TextDim);
+        vb.AddChild(costTypeL);
+        vb.AddChild(new HSeparator());
+        var descL = new Label { Text = card.Def.EffectDescription(), AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0) };
+        descL.AddThemeFontSizeOverride("font_size", 13);
+        vb.AddChild(descL);
+        if (card.Def.Type == CardType.Prep)
+        {
+            var prepL = new Label { Text = "★ 打出后自动回手，不进弃牌堆" };
+            prepL.AddThemeFontSizeOverride("font_size", 11);
+            prepL.AddThemeColorOverride("font_color", UiPalette.ShieldTeal);
+            vb.AddChild(prepL);
+        }
+        if (card.Enchantments.Count > 0)
+        {
+            vb.AddChild(new HSeparator());
+            var enchL = new Label { Text = "附魔：" + DetailEnchantText(card) };
+            enchL.AddThemeFontSizeOverride("font_size", 11);
+            enchL.AddThemeColorOverride("font_color", UiPalette.VulnGold);
+            vb.AddChild(enchL);
+        }
+        var hintL = new Label { Text = "[右键或点击其他处关闭]" };
+        hintL.AddThemeFontSizeOverride("font_size", 10);
+        hintL.AddThemeColorOverride("font_color", UiPalette.TextDim);
+        vb.AddChild(hintL);
+        panel.AddChild(vb);
+        _fxLayer.AddChild(panel);
+        _detailPopup = panel;
+        float px = Math.Min(screenPos.X + 16, _viewSize.X - 290);
+        float py = Math.Clamp(screenPos.Y - 80, 8, _viewSize.Y - 260);
+        panel.Position = new Vector2(px, py);
+    }
+
+    private void ShowEnemyDetail(List<Enemy> enemies, Vector2 screenPos)
+    {
+        CloseDetailPopup();
+        var panel = new PanelContainer { ZIndex = 80 };
+        var sb = new StyleBoxFlat { BgColor = new Color(0.14f, 0.07f, 0.07f, 0.97f), BorderColor = new Color(0.85f, 0.28f, 0.28f) };
+        sb.SetBorderWidthAll(2); sb.SetCornerRadiusAll(6);
+        sb.ContentMarginLeft = 14; sb.ContentMarginTop = 12; sb.ContentMarginRight = 14; sb.ContentMarginBottom = 12;
+        panel.AddThemeStyleboxOverride("panel", sb);
+        var vb = new VBoxContainer();
+        vb.AddThemeConstantOverride("separation", 5);
+        for (int ei = 0; ei < enemies.Count; ei++)
+        {
+            var enemy = enemies[ei];
+            if (ei > 0) vb.AddChild(new HSeparator());
+            var nameL = new Label { Text = enemy.IsAlive ? enemy.Name : $"{enemy.Name}（已倒下）" };
+            nameL.AddThemeFontSizeOverride("font_size", 16);
+            nameL.AddThemeColorOverride("font_color", EnemyColor(enemy.Kind));
+            vb.AddChild(nameL);
+            var infoL = new Label { Text = $"HP {enemy.Hp}  ·  位置{enemy.Position}  ·  触发格{enemy.NodeSlot}" };
+            infoL.AddThemeFontSizeOverride("font_size", 11);
+            infoL.AddThemeColorOverride("font_color", UiPalette.TextDim);
+            vb.AddChild(infoL);
+            var chainL = new Label { Text = "行动链：" + BuildChainText(enemy), AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(220, 0) };
+            chainL.AddThemeFontSizeOverride("font_size", 12);
+            vb.AddChild(chainL);
+            var nextL = new Label { Text = "▶ 下步：" + IntentText(enemy) };
+            nextL.AddThemeFontSizeOverride("font_size", 12);
+            nextL.AddThemeColorOverride("font_color", new Color(1f, 0.72f, 0.3f));
+            vb.AddChild(nextL);
+            if (enemy.Charge > 0 || enemy.Statuses.Count > 0)
+            {
+                var parts = new List<string>();
+                if (enemy.Charge > 0) parts.Add($"蓄力+{enemy.Charge}");
+                foreach (var s in enemy.Statuses)
+                    parts.Add(s.Type == EnchantmentType.Vulnerable ? $"易伤{s.Magnitude}×{s.Remaining}" : $"{s.Type}{s.Magnitude}");
+                var statL = new Label { Text = "状态：" + string.Join("  ", parts) };
+                statL.AddThemeFontSizeOverride("font_size", 11);
+                statL.AddThemeColorOverride("font_color", UiPalette.VulnGold);
+                vb.AddChild(statL);
+            }
+        }
+        var hintL = new Label { Text = "[右键或点击其他处关闭]" };
+        hintL.AddThemeFontSizeOverride("font_size", 10);
+        hintL.AddThemeColorOverride("font_color", UiPalette.TextDim);
+        vb.AddChild(hintL);
+        panel.AddChild(vb);
+        _fxLayer.AddChild(panel);
+        _detailPopup = panel;
+        float px = Math.Min(screenPos.X + 8, _viewSize.X - 290);
+        float py = Math.Clamp(screenPos.Y, 8, _viewSize.Y - 320);
+        panel.Position = new Vector2(px, py);
+    }
+
+    private void CloseDetailPopup()
+    {
+        if (_detailPopup is not null && IsInstanceValid(_detailPopup)) _detailPopup.QueueFree();
+        _detailPopup = null;
+    }
+
+    public override void _UnhandledInput(InputEvent e)
+    {
+        if (_detailPopup is null) return;
+        bool dismiss = (e is InputEventMouseButton mb && mb.Pressed)
+                    || (e is InputEventKey k && k.Pressed && k.Keycode == Key.Escape);
+        if (dismiss) CloseDetailPopup();
+    }
+
+    private static string BuildChainText(Enemy enemy)
+    {
+        if (enemy.ActionChain.Count == 0) return $"默认攻击{enemy.EffectivePower}";
+        int cur = enemy.ChainIndex % enemy.ActionChain.Count;
+        var parts = new List<string>();
+        for (int i = 0; i < enemy.ActionChain.Count; i++)
+            parts.Add((i == cur ? "▶" : $"{i + 1}.") + ActionStepText(enemy.ActionChain[i]));
+        return string.Join(" → ", parts);
+    }
+
+    private static string ActionStepText(EnemyAction action) => action switch
+    {
+        EnemyAction.Attack a => a.TargetPos == -1 ? $"打全体{a.Amount}" : a.TargetPos == 1 ? $"斩位1·{a.Amount}" : a.TargetPos == 2 ? $"突位2·{a.Amount}" : $"攻{a.Amount}",
+        EnemyAction.Charge c => $"蓄力+{c.Amount}",
+        EnemyAction.Idle => "待机",
+        _ => "?",
+    };
+
+    private static string DetailEnchantText(Card card)
+    {
+        int power = 0, vuln = 0, vulnT = 0, charge = 0;
+        foreach (var e in card.Enchantments)
+        {
+            if (e.Type == EnchantmentType.Power) power += e.Magnitude;
+            else if (e.Type == EnchantmentType.Vulnerable) { vuln += e.Magnitude; vulnT += e.Remaining; }
+            else if (e.Type == EnchantmentType.Charge) charge += e.Magnitude;
+        }
+        var parts = new List<string>();
+        if (power > 0) parts.Add($"力量+{power}（攻击+{power}）");
+        if (vuln > 0) parts.Add($"易伤+{vuln}×{vulnT}次");
+        if (charge > 0) parts.Add($"蓄力+{charge}");
+        return string.Join("  ", parts);
     }
 
     private static Color CardBgColor(CardDef def) => def.Type switch
@@ -690,7 +879,10 @@ public partial class GameView : Control
     private void ExecutePlay(PlayerAction action)
     {
         _playing = true;
+        int prevPtr = State!.Pointer;
         var ev = State.Apply(action);
+        int ptrDelta = (State.Pointer - prevPtr + State.Timeline.Length) % State.Timeline.Length;
+        _pendingTimelineShift = ptrDelta * 72f; // 每格宽68 + 间距4 = 72px
         LogEvents(ev);
         _hoverAction = null;
         _hoverEvents = null;
@@ -705,15 +897,25 @@ public partial class GameView : Control
         GetTree().CreateTimer(0.4f).Timeout += OnPlayPaced;
     }
 
-    /// <summary>指针光点平滑滑到当前格（文档 §七：逐格平滑滑动，ease out）。</summary>
+    /// <summary>指针光点归位到当前格，并触发时间轴滑动动画（指针格始终固定在第5列）。</summary>
     private void TweenPointerToCurrentCell()
     {
         var cell = _timelineRow.GetChildren().OfType<Control>().FirstOrDefault(c => c.Name == "__ptr_cell__");
         if (cell is null) return;
+        // 当前格固定在同屏位置——光点直接归位，无需 tween
         Vector2 target = cell.GlobalPosition + new Vector2(28, 2);
-        if (!_pointerGlow.Visible) { _pointerGlow.Position = target; _pointerGlow.Visible = true; return; }
-        var tw = CreateTween();
-        tw.TweenProperty(_pointerGlow, "position", target, 0.18f).SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.Out);
+        _pointerGlow.Position = target;
+        _pointerGlow.Visible = true;
+        // 时间轴滑动：从右偏 shift 处向 0 滑（传递"时间前进"的感觉）
+        if (_pendingTimelineShift > 0)
+        {
+            float shift = _pendingTimelineShift;
+            _pendingTimelineShift = 0;
+            _timelineRow.Position = new Vector2(shift, 0);
+            var tw = CreateTween();
+            tw.TweenProperty(_timelineRow, "position:x", 0f, 0.28f)
+              .SetTrans(Tween.TransitionType.Sine).SetEase(Tween.EaseType.Out);
+        }
     }
 
     private void OnPlayPaced()

@@ -15,6 +15,8 @@ public sealed class Timeline
 
     public Enemy? EnemyAt(int slot) => Enemies.Find(e => e.NodeSlot == slot);
 
+    public List<Enemy> EnemiesAt(int slot) => Enemies.FindAll(e => e.NodeSlot == slot);
+
     public Timeline Clone()
     {
         var t = new Timeline { Pointer = Pointer };
