@@ -29,9 +29,9 @@ public partial class GameView : Control
     private Card? _targetingCard;
     private int _targetingCharId;
 
-    // 立绘状态机：按 id 查找，Play 后喂事件驱动动画
-    private readonly Dictionary<int, PortraitController> _charPortraits = new();
-    private readonly Dictionary<int, PortraitController> _enemyPortraits = new();
+    // 头像组件：按 id 查找，Play 后喂事件驱动立绘动画
+    private readonly Dictionary<int, PortraitView> _charPortraits = new();
+    private readonly Dictionary<int, PortraitView> _enemyPortraits = new();
 
     // 局域网联机
     private NetController? _net;
@@ -270,42 +270,12 @@ public partial class GameView : Control
 
     private Control MakePortrait(Character c, bool isActive)
     {
-        var p = new Button
-        {
-            CustomMinimumSize = new Vector2(108, 110),
-            Text = $"{(isActive ? "▶ " : "")}{c.Name}\n位{c.Position}\nHP {c.Hp}/{c.MaxHp}",
-            Disabled = !c.IsAlive,
-        };
-        p.AddThemeFontSizeOverride("font_size", 12);
-        bool aimed = IsAimed(c); // 文档 §二：1位/被瞄准位警示高亮
-        var sb = new StyleBoxFlat
-        {
-            BgColor = ColorOf(c.Color).Darkened(isActive ? 0.45f : 0.72f),
-            BorderColor = aimed ? UiPalette.WarnOrange : (isActive ? Colors.White : ColorOf(c.Color)),
-        };
-        sb.SetBorderWidthAll(3);
-        sb.ContentMarginLeft = 5; sb.ContentMarginTop = 3; sb.ContentMarginRight = 5; sb.ContentMarginBottom = 3;
-        sb.SetCornerRadiusAll(4);
-        p.AddThemeStyleboxOverride("normal", sb);
-        p.AddThemeStyleboxOverride("hover", sb);
-        p.AddThemeStyleboxOverride("pressed", sb);
-        p.AddThemeStyleboxOverride("disabled", sb);
-
-        // 立绘状态机（规格 §4.8）：挂为子节点，按角色 id 绑定；事件驱动动画
-        var portrait = new PortraitController
-        {
-            BoundCharacterId = c.Id,
-            DrawW = 44, DrawH = 50,
-            Position = new Vector2(54, 28),
-            IdleBreath = c.IsAlive,
-        };
-        if (!c.IsAlive) portrait.ToDown();
-        p.AddChild(portrait);
-        _charPortraits[c.Id] = portrait;
-
+        var pv = new PortraitView();
+        pv.SetupCharacter(c, isActive, IsAimed(c));
         int id = c.Id;
-        p.Pressed += () => { _activeId = id; Render(); };
-        return p;
+        pv.Clicked += () => { _activeId = id; Render(); };
+        _charPortraits[c.Id] = pv;
+        return pv;
     }
 
     /// <summary>该角色是否被任一存活敌人的下一步攻击瞄准（含全体）。</summary>
@@ -326,88 +296,15 @@ public partial class GameView : Control
 
     private Control MakeEnemyBlock(Enemy e, bool clickable)
     {
+        var pv = new PortraitView();
+        pv.SetupEnemy(e, clickable && e.IsAlive, aimed: false);
         if (clickable && e.IsAlive)
         {
-            var btn = new Button
-            {
-                Text = $"➜ {e.Name}\n{IntentText(e)}\nHP {e.Hp}",
-                CustomMinimumSize = new Vector2(120, 92),
-            };
-            btn.AddThemeFontSizeOverride("font_size", 11);
-            var csb = new StyleBoxFlat
-            {
-                BgColor = new Color(0.30f, 0.16f, 0.10f),
-                BorderColor = new Color(1f, 0.85f, 0.3f),
-            };
-            csb.SetBorderWidthAll(3); csb.SetCornerRadiusAll(4);
-            btn.AddThemeStyleboxOverride("normal", csb);
-            btn.AddThemeStyleboxOverride("hover", csb);
-            AttachEnemyPortrait(e, btn);
             int eid = e.Id;
-            btn.Pressed += () => PlayCardAtEnemy(eid);
-            return btn;
+            pv.Clicked += () => PlayCardAtEnemy(eid);
         }
-
-        var p = new PanelContainer { CustomMinimumSize = new Vector2(120, 92) };
-        var sb = new StyleBoxFlat
-        {
-            BgColor = new Color(0.20f, 0.10f, 0.10f),
-            BorderColor = new Color(0.85f, 0.35f, 0.35f),
-        };
-        sb.SetBorderWidthAll(3);
-        sb.ContentMarginLeft = 5; sb.ContentMarginTop = 3; sb.ContentMarginRight = 5; sb.ContentMarginBottom = 3;
-        sb.SetCornerRadiusAll(4);
-        p.AddThemeStyleboxOverride("panel", sb);
-        var vb = new VBoxContainer();
-        vb.AddThemeConstantOverride("separation", 1);
-        p.AddChild(vb);
-        var nl = new Label { Text = e.IsAlive ? e.Name : $"{e.Name}×" };
-        nl.AddThemeColorOverride("font_color", new Color(1f, 0.6f, 0.6f));
-        nl.AddThemeFontSizeOverride("font_size", 13);
-        vb.AddChild(nl);
-        var kind = new Label { Text = $"{KindText(e.Kind)} · 下一步:{IntentText(e)}" };
-        kind.AddThemeFontSizeOverride("font_size", 11);
-        kind.AddThemeColorOverride("font_color", new Color(0.85f, 0.7f, 0.4f));
-        vb.AddChild(kind);
-        var bar = new ProgressBar { MinValue = 0, MaxValue = e.Hp > 0 ? e.Hp : 1, Value = e.Hp, CustomMinimumSize = new Vector2(96, 0) };
-        vb.AddChild(bar);
-        var hl = new Label { Text = $"HP {e.Hp}" };
-        hl.AddThemeFontSizeOverride("font_size", 10);
-        vb.AddChild(hl);
-        if (e.Charge > 0)
-        {
-            var cl = new Label { Text = $"蓄+{e.Charge}" };
-            cl.AddThemeColorOverride("font_color", new Color(1f, 0.8f, 0.3f));
-            cl.AddThemeFontSizeOverride("font_size", 10);
-            vb.AddChild(cl);
-        }
-        // 易伤标记（附魔只读显示器，文档 §五）
-        int vuln = e.Statuses.Where(s => s.Type == EnchantmentType.Vulnerable).Sum(s => s.Magnitude);
-        int vulnTimes = e.Statuses.Where(s => s.Type == EnchantmentType.Vulnerable).Sum(s => s.Remaining);
-        if (vuln > 0)
-        {
-            var vl = new Label { Text = $"易伤+{vuln}×{vulnTimes}" };
-            vl.AddThemeColorOverride("font_color", UiPalette.VulnGold);
-            vl.AddThemeFontSizeOverride("font_size", 10);
-            vb.AddChild(vl);
-        }
-        AttachEnemyPortrait(e, p);
-        return p;
-    }
-
-    /// <summary>给敌人块挂立绘状态机（顶部小色块，按 id 绑定）。</summary>
-    private void AttachEnemyPortrait(Enemy e, Control parent)
-    {
-        var portrait = new PortraitController
-        {
-            BoundEnemyId = e.Id,
-            DrawW = 30, DrawH = 30,
-            Position = new Vector2(20, 18),
-            IdleBreath = e.IsAlive,
-        };
-        if (!e.IsAlive) portrait.ToDown();
-        parent.AddChild(portrait);
-        _enemyPortraits[e.Id] = portrait;
+        _enemyPortraits[e.Id] = pv;
+        return pv;
     }
 
     /// <summary>敌人下一步行动的意图文本（受击模式差异化展示）。</summary>
@@ -804,23 +701,23 @@ public partial class GameView : Control
             foreach (var p in _enemyPortraits.Values) p.OnEvent(e);
             if (e is GameEvent.DamageDealt dd)
             {
-                var portrait = dd.TargetIsEnemy
+                var pv = dd.TargetIsEnemy
                     ? (_enemyPortraits.TryGetValue(dd.TargetId, out var ep) ? ep : null)
                     : (_charPortraits.TryGetValue(dd.TargetId, out var cp) ? cp : null);
-                if (portrait is not null) _pendingDmg.Add((portrait, dd.Amount, dd.TargetIsEnemy));
+                if (pv is not null) _pendingDmg.Add((pv, dd.Amount, dd.TargetIsEnemy));
             }
         }
         if (_pendingDmg.Count > 0) CallDeferred(MethodName.SpawnPendingDamageNumbers);
     }
 
-    private readonly List<(PortraitController Portrait, int Amount, bool Enemy)> _pendingDmg = new();
+    private readonly List<(PortraitView View, int Amount, bool Enemy)> _pendingDmg = new();
 
     private void SpawnPendingDamageNumbers()
     {
-        foreach (var (portrait, amount, enemy) in _pendingDmg)
+        foreach (var (view, amount, enemy) in _pendingDmg)
         {
-            if (IsInstanceValid(portrait))
-                SpawnDamageNumber(portrait.GlobalPosition, amount, enemy);
+            if (IsInstanceValid(view) && view.Portrait is not null)
+                SpawnDamageNumber(view.Portrait.GlobalPosition, amount, enemy);
         }
         _pendingDmg.Clear();
     }

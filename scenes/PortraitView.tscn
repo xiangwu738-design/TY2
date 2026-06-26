@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/Tongyuan/UI/PortraitView.cs" id="1_pv"]
+
+[node name="PortraitView" type="PanelContainer"]
+custom_minimum_size = Vector2(124, 116)
+script = ExtResource("1_pv")

@@ -20,11 +20,13 @@ public partial class Main : Control
     private RunController? _run;
     private Control? _devPanel;
     private bool _devVisible;
+    private PackedScene? _battleScene;
 
     public override void _Ready()
     {
         SetAnchorsPreset(LayoutPreset.FullRect);
         Theme = UiPalette.BuildTheme(); // 全局 CJK SystemFont + 配色
+        _battleScene = ResourceLoader.Load<PackedScene>("res://scenes/Battle.tscn");
         BuildDevPanel();
         ShowMenu();
         GetViewport().Connect("size_changed", Callable.From(ResizeView));
@@ -73,7 +75,9 @@ public partial class Main : Control
             case MapNodeType.Elite:
             case MapNodeType.Boss:
                 var gs = BuildSampleBattle();
-                var gv = new GameView { State = gs };
+                var gv = _battleScene?.Instantiate() as GameView;
+                if (gv is null) gv = new GameView();
+                gv.State = gs;
                 gv.BattleOver += OnBattleOver;
                 _screen = gv;
                 // 主菜单联机意图：进战斗后建主/加入
