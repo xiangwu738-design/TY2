@@ -183,16 +183,33 @@ public partial class CardView : Panel
     public override void _Draw()
     {
         if (!_dragging || Targeting != TargetKind.Enemy) return;
-        // 箭头：从卡牌中心到光标（局部坐标）
+        // 曲线箭头（二次贝塞尔，杀戮尖塔式弯曲）：从卡牌中心到光标（局部坐标）
         var from = Size / 2f;
         var to = GetGlobalMousePosition() - GlobalPosition;
-        DrawLine(from, to, UiPalette.VulnGold with { A = 0.9f }, 3f);
-        // 箭头头
-        var dir = (to - from).Normalized();
-        var perp = new Vector2(-dir.Y, dir.X);
-        var head = to;
-        DrawLine(head, head - dir * 14 + perp * 6, UiPalette.VulnGold, 3f);
-        DrawLine(head, head - dir * 14 - perp * 6, UiPalette.VulnGold, 3f);
+        var mid = (from + to) / 2f;
+        float len = (to - from).Length();
+        var ctrl = mid + new Vector2(0, -Mathf.Min(90f, len * 0.22f)); // 控制点上提 → 向上弯曲
+        var col = UiPalette.VulnGold with { A = 0.92f };
+        Vector2 prev = Quad(from, ctrl, to, 0f);
+        const int N = 18;
+        for (int i = 1; i <= N; i++)
+        {
+            float t = i / (float)N;
+            var p = Quad(from, ctrl, to, t);
+            DrawLine(prev, p, col, 3.5f);
+            prev = p;
+        }
+        // 箭头头（沿末端切线方向）
+        var tan = (Quad(from, ctrl, to, 1f) - Quad(from, ctrl, to, 0.92f)).Normalized();
+        var perp = new Vector2(-tan.Y, tan.X);
+        DrawLine(to, to - tan * 16 + perp * 7, col, 3.5f);
+        DrawLine(to, to - tan * 16 - perp * 7, col, 3.5f);
+    }
+
+    private static Vector2 Quad(Vector2 p0, Vector2 p1, Vector2 p2, float t)
+    {
+        float u = 1f - t;
+        return u * u * p0 + 2 * u * t * p1 + t * t * p2;
     }
 
     /// <summary>汇总卡牌附魔为徽标文本（力+N / 易+N×K / 蓄+N）。</summary>
