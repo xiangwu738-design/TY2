@@ -41,6 +41,7 @@ public partial class CardView : Panel
     private bool _dragging;
     private Vector2 _dragStart;
     private Vector2 _dragPos;
+    private Vector2 _origin;
 
     public static readonly Vector2 CardSize = new(184, 268);
 
@@ -133,12 +134,12 @@ public partial class CardView : Panel
         if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
             if (!DragPlay) { OnClicked?.Invoke(this); return; } // 弹窗/奖励：直接点击
-            // 战斗手牌：开始拖拽（杀戮尖塔制：无目标向上托、有目标拖箭头）
+            // 战斗手牌：开始拖拽
             _dragging = true;
+            _origin = Position;
             _dragStart = GetGlobalMousePosition();
             _dragPos = _dragStart;
             ZIndex = 20;
-            QueueRedraw();
         }
     }
 
@@ -146,6 +147,12 @@ public partial class CardView : Panel
     {
         if (!_dragging) return;
         _dragPos = GetGlobalMousePosition();
+        var parentGlobal = (GetParent() as Control)?.GlobalPosition ?? Vector2.Zero;
+        var localMouse = _dragPos - parentGlobal;
+        if (Targeting == TargetKind.None)
+            Position = localMouse - Size / 2f;                 // 无目标：卡牌跟手
+        else
+            Position = _origin + new Vector2(0, -170);          // 有目标：升到手牌区中央，箭头从这出发
         QueueRedraw();
         if (!Godot.Input.IsMouseButtonPressed(MouseButton.Left))
             ResolveDrag();
@@ -155,6 +162,7 @@ public partial class CardView : Panel
     {
         _dragging = false;
         ZIndex = 0;
+        Position = _origin; // 回到手牌原位
         QueueRedraw();
         float dy = _dragPos.Y - _dragStart.Y;
         switch (Targeting)

@@ -22,6 +22,7 @@ public partial class PortraitView : PanelContainer
     private Label _status = null!;
     private ColorRect _aimGlow = null!;
     private ColorRect _flash = null!;
+    private ColorRect _targetGlow = null!;
     private bool _aimed;
     private float _time;
     private bool _built;
@@ -70,6 +71,18 @@ public partial class PortraitView : PanelContainer
         _flash = new ColorRect { Color = new Color(1, 1, 1, 0), MouseFilter = MouseFilterEnum.Ignore };
         _flash.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_flash);
+        // 被指向高亮（玩家近战牌悬停：标记将受影响的敌人）
+        _targetGlow = new ColorRect { Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0f), MouseFilter = MouseFilterEnum.Ignore };
+        _targetGlow.SetAnchorsPreset(LayoutPreset.FullRect);
+        _targetGlow.Visible = false;
+        AddChild(_targetGlow);
+    }
+
+    /// <summary>玩家指向高亮（近战牌悬停预读：标记将挨打的敌人）。</summary>
+    public void Highlight(bool on)
+    {
+        _targetGlow.Visible = on;
+        if (on) _targetGlow.Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0.30f);
     }
 
     public override void _Process(double delta)

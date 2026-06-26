@@ -823,6 +823,7 @@ public partial class GameView : Control
         _hoverAction = action;
         _hoverEvents = State.Preview(action);
         RenderHover();
+        HighlightAffected(action); // 近战牌悬停：高亮将受影响的敌人
     }
 
     private void ClearHover()
@@ -830,6 +831,34 @@ public partial class GameView : Control
         _hoverAction = null;
         _hoverEvents = null;
         RenderHover();
+        foreach (var pv in _enemyPortraits.Values) pv.Highlight(false);
+    }
+
+    /// <summary>近战攻击牌悬停时，按伤害类型高亮将挨打的敌人（斩位1/突位2/打全体）。</summary>
+    private void HighlightAffected(PlayerAction action)
+    {
+        foreach (var pv in _enemyPortraits.Values) pv.Highlight(false);
+        if (State is null || action.Type != ActionType.PlayCard || action.CardInstanceId is null) return;
+        var c = State.Characters.Find(x => x.Id == action.CharacterId);
+        var card = c?.Hand.Find(k => k.InstanceId == action.CardInstanceId);
+        if (card is null || card.Def.Effect != EffectKind.AttackDamage) return;
+        // 仅近战（非远程/非代码卡自选）做预读高亮；远程走拖箭头，不高亮
+        if (card.Def.DamageType == DamageType.Ranged || card.Def.NeedsTargetEnemy) return;
+        foreach (var id in AffectedEnemyIds(card.Def))
+            if (_enemyPortraits.TryGetValue(id, out var pv)) pv.Highlight(true);
+    }
+
+    private List<int> AffectedEnemyIds(CardDef def)
+    {
+        var ids = new List<int>();
+        if (State is null) return ids;
+        switch (def.DamageType)
+        {
+            case DamageType.Slash: var e1 = State.Enemies.FirstOrDefault(e => e.IsAlive && e.Position == 1); if (e1 is not null) ids.Add(e1.Id); break;
+            case DamageType.Thrust: var e2 = State.Enemies.FirstOrDefault(e => e.IsAlive && e.Position == 2); if (e2 is not null) ids.Add(e2.Id); break;
+            case DamageType.Blunt: ids.AddRange(State.Enemies.Where(e => e.IsAlive).Select(e => e.Id)); break;
+        }
+        return ids;
     }
 
     private void Restart()
