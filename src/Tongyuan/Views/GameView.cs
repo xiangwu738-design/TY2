@@ -43,7 +43,7 @@ public partial class GameView : Control
     private HBoxContainer _battleField = null!;
     private HBoxContainer _timelineRow = null!;
     private Label _activeLabel = null!;
-    private HBoxContainer _handRow = null!;
+    private Control _handRow = null!;
     private HBoxContainer _actionRow = null!;
     private Label _previewLabel = null!;
     private RichTextLabel _log = null!;
@@ -63,6 +63,7 @@ public partial class GameView : Control
     /// （运行时 AddChild 的 Control 不会由普通 Control 父节点自动布局，须显式驱动）。</summary>
     public void ResizeTo(Vector2 size)
     {
+        _viewSize = size;
         Size = size;
         Position = Vector2.Zero;
         if (_margin is not null)
@@ -71,6 +72,7 @@ public partial class GameView : Control
             _margin.Size = size;
         }
     }
+    private Vector2 _viewSize = new(1920, 1080);
 
     // ------------------------------------------------------------------ UI 构建
     private void BuildUi()
@@ -150,8 +152,7 @@ public partial class GameView : Control
         _activeLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _activeLabel.AddThemeFontSizeOverride("font_size", 14);
         vb.AddChild(_activeLabel);
-        _handRow = new HBoxContainer();
-        _handRow.AddThemeConstantOverride("separation", 6);
+        _handRow = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 300) };
         vb.AddChild(_handRow);
         _actionRow = new HBoxContainer();
         _actionRow.AddThemeConstantOverride("separation", 6);
@@ -239,7 +240,8 @@ public partial class GameView : Control
     {
         bool over = IsBattleOver();
         string st = over ? ("结束—" + (IsWin() ? "胜" : "败")) : "进行中";
-        _topLabel.Text = $"《同渊》正式版 · 指针格={State!.Pointer} · 历史={State.ActionHistory.Count} · {st}";
+        string q = _playQueue.Count > 0 ? $" · 队列{_playQueue.Count}/{QueueCap}" : (_playing ? " · 演出中" : "");
+        _topLabel.Text = $"《同渊》正式版 · 指针格={State!.Pointer} · 历史={State.ActionHistory.Count} · {st}{q}";
     }
 
     private void RenderBattleField()
@@ -529,8 +531,25 @@ public partial class GameView : Control
             return;
         }
 
-        foreach (var card in c.Hand)
-            _handRow.AddChild(MakeCardButton(c, card));
+        // 尖塔式扇形手牌（文档 §二）：居中弧形排列，外侧牌微倾+下移
+        var hand = c.Hand;
+        int n = hand.Count;
+        float cardW = CardView.CardSize.X;
+        float gap = 10f;
+        float centerX = _viewSize.X / 2f;
+        float baseY = 24f; // 扇形顶端基线（卡顶）
+        for (int i = 0; i < n; i++)
+        {
+            var cv = (CardView)MakeCardButton(c, hand[i]);
+            float off = n > 1 ? (i - (n - 1f) / 2f) : 0f;            // -中..+中
+            float spacing = Math.Min(cardW + gap, (_viewSize.X * 0.7f) / Math.Max(1, n));
+            float x = centerX + off * spacing - cardW / 2f;
+            float rot = off * 0.05f;                                  // 外侧倾斜 ~3°/张
+            float y = baseY + off * off * 4f;                         // 外侧下移成弧
+            cv.Position = new Vector2(x, y);
+            cv.Rotation = rot;
+            _handRow.AddChild(cv);
+        }
 
         // 整备牌（回手，常驻）+ 空过
         if (c.PrepCard is not null)
@@ -643,14 +662,24 @@ public partial class GameView : Control
 
     private int? FirstAliveEnemyId() => State?.Enemies.FirstOrDefault(e => e.IsAlive)?.Id;
 
+    // ---- 出牌队列（文档 §四：即时出牌→进队列→逐张结算；硬上限防失控；同一时刻只一份演出）----
+    private readonly Queue<PlayerAction> _playQueue = new();
+    private bool _playing;
+    private const int QueueCap = 2; // 文档：同时未结算牌 ≤ 2
+
     private void Play(PlayerAction action)
     {
         if (State is null || IsBattleOver()) return;
-
-        // 客户端：发主机，不本地结算（主机权威）；等广播回来自动重渲染
+        // 客户端：发主机，不本地结算
         if (_net is not null && _isClient) { _net.SubmitAction(action); return; }
+        // 正在演出当前牌 → 进队列（硬上限），不打断当前演出
+        if (_playing) { if (_playQueue.Count < QueueCap) { _playQueue.Enqueue(action); RenderTop(); } return; }
+        ExecutePlay(action);
+    }
 
-        // 主机 / 离线：本地权威结算
+    private void ExecutePlay(PlayerAction action)
+    {
+        _playing = true;
         var ev = State.Apply(action);
         LogEvents(ev);
         _hoverAction = null;
@@ -658,10 +687,20 @@ public partial class GameView : Control
         _targetMode = TargetMode.None;
         _targetingCard = null;
         Render();
-        AnimatePortraits(ev);   // 立绘状态机协同
+        AnimatePortraits(ev);      // 立绘状态机协同（当前牌演出）
         PlayCardAnimation(action); // 出牌动画
-        if (_net is not null && !_isClient) _net.Broadcast(action); // 主机广播
-        if (IsBattleOver()) EmitSignal(SignalName.BattleOver, IsWin()); // 通知路由器
+        if (_net is not null && !_isClient) _net.Broadcast(action);
+        RenderTop(); // 更新队列计数
+        // 节奏：当前牌演出一小段后，解锁并处理队列下一张（或结算战斗结束）
+        GetTree().CreateTimer(0.4f).Timeout += OnPlayPaced;
+    }
+
+    private void OnPlayPaced()
+    {
+        _playing = false;
+        if (IsBattleOver()) { EmitSignal(SignalName.BattleOver, IsWin()); _playQueue.Clear(); RenderTop(); return; }
+        if (_playQueue.Count > 0) ExecutePlay(_playQueue.Dequeue());
+        else RenderTop();
     }
 
     /// <summary>客户端/主机收到远端动作后：用最新状态重渲染 + 日志 + 立绘动画。</summary>
