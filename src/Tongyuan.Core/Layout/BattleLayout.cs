@@ -27,7 +27,7 @@ public sealed class BattleLayout
     public List<RectF> CharacterPortraits { get; } = new();
     public List<RectF> EnemyPortraits { get; } = new();
     public List<RectF> TimelineCells { get; } = new();
-    public RectF PointerMarker { get; private set; }
+    public RectF PointerMarker { get; private set; } = new(0, 0, 0, 0);
     public List<RectF> HandCards { get; } = new();
 
     public static BattleLayout Compute(int nChars, int nEnemies, int timelineLen, int handCount, int pointer = 0)

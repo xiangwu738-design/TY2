@@ -19,9 +19,9 @@ public class CoreTests
 
         gs.Apply(new PlayerAction(1, ActionType.PlayCard, atk.InstanceId, TargetEnemyId: 1));
 
-        Assert.Equal(2, gs.Pointer);                 // 推进 2 格
+        Assert.Equal(3, gs.Pointer);                 // 推进 cost+1=3 格
         Assert.Equal(15, c1.Hp);                      // 沿途被敌人打 5
-        Assert.Equal(90, enemy.Hp);                   // 终点牌效果打敌 10
+        Assert.Equal(90, enemy.Hp);                   // 牌效果即时打敌 10
         Assert.Contains(gs.Events, e => e is GameEvent.EnemyTriggered);
         Assert.Contains(gs.Events, e => e is GameEvent.DamageDealt d && d.TargetIsEnemy);
     }
@@ -38,7 +38,7 @@ public class CoreTests
 
         gs.Apply(new PlayerAction(1, ActionType.UsePrep));
 
-        Assert.Equal(1, gs.Pointer);                  // 占位推进 1
+        Assert.Equal(2, gs.Pointer);                  // 占位推进 cost+1=2
         Assert.NotNull(c1.PrepCard);                  // 整备牌仍在手
         Assert.Equal(2, c1.Hand.Count);               // 抽了 2
         Assert.Empty(c1.DrawPile);
@@ -77,9 +77,8 @@ public class CoreTests
         c1.Hand.Add(shd);
         var gs = GameStateFixture.State(1, tl, c1);
 
-        gs.Apply(new PlayerAction(1, ActionType.PlayCard, shd.InstanceId, TargetCharacterId: 1)); // 铺盾
-        Assert.Single(gs.Shields);
-        gs.Apply(new PlayerAction(1, ActionType.Skip));                                // 推进触发敌人
+        // 铺盾即时生效 + 推进 1 格触发敌人：护盾吸收 8，实伤 2，护盾耗尽
+        gs.Apply(new PlayerAction(1, ActionType.PlayCard, shd.InstanceId, TargetCharacterId: 1));
 
         Assert.Equal(18, c1.Hp);                      // 10 - 8 吸收 = 2 实伤
         Assert.Empty(gs.Shields);                     // 耗尽移除
@@ -100,6 +99,7 @@ public class CoreTests
 
         Assert.False(c1.IsAlive);
         Assert.Equal(1, c2.Position);                 // 向前补位
+        Assert.Equal(2, c1.Position);
         Assert.Equal(20, c2.Hp);
         Assert.Contains(gs.Events, e => e is GameEvent.CharacterDied);
     }
@@ -132,6 +132,70 @@ public class CoreTests
 
     // ---- 抽牌堆空→弃牌堆带种子洗牌回抽牌堆 ----
     [Fact]
+    public void InvalidAction_DoesNotAdvanceOrEnterHistory()
+    {
+        var tl = GameStateFixture.TimelineOf(3);
+        var c1 = GameStateFixture.Char(1, hp: 20, pos: 1, prep: GameStateFixture.Prep());
+        var gs = GameStateFixture.State(1, tl, c1);
+
+        var events = gs.Apply(new PlayerAction(1, ActionType.PlayCard, Guid.NewGuid()));
+
+        Assert.Empty(events);
+        Assert.Equal(0, gs.Pointer);
+        Assert.Empty(gs.ActionHistory);
+    }
+
+    [Fact]
+    public void RequiredTargetCards_AreNotConsumedWhenTargetMissing()
+    {
+        var tl = GameStateFixture.TimelineOf(3);
+        var enemy = GameStateFixture.Enemy(1, slot: 2, EnemyKind.Slash, power: 5, hp: 100);
+        tl.Enemies.Add(enemy);
+        var ranged = GameStateFixture.Card(new CardDef
+        {
+            Id = "ranged", Name = "ranged", Type = CardType.Attack, Cost = 1,
+            Effect = EffectKind.AttackDamage, Magnitude = 5, DamageType = DamageType.Ranged,
+        });
+        var power = GameStateFixture.Card(GameStateFixture.Enchant(0, EnchantmentType.Power, 2));
+        var c1 = GameStateFixture.Char(1, hp: 20, pos: 1, prep: GameStateFixture.Prep());
+        c1.Hand.Add(ranged);
+        c1.Hand.Add(power);
+        var gs = GameStateFixture.State(1, tl, c1);
+
+        Assert.Empty(gs.Apply(new PlayerAction(1, ActionType.PlayCard, ranged.InstanceId)));
+        Assert.Empty(gs.Apply(new PlayerAction(1, ActionType.PlayCard, power.InstanceId)));
+
+        Assert.Contains(ranged, c1.Hand);
+        Assert.Contains(power, c1.Hand);
+        Assert.Empty(c1.DiscardPile);
+        Assert.Empty(gs.ActionHistory);
+        Assert.Equal(100, enemy.Hp);
+    }
+
+    [Fact]
+    public void Clone_PreservesPresentationStateAndHistory()
+    {
+        var tl = GameStateFixture.TimelineOf(3);
+        var enemy = GameStateFixture.Enemy(2, slot: 1, EnemyKind.Slash, power: 5, hp: 100);
+        enemy.PortraitArt = "res://enemy.png";
+        tl.Enemies.Add(enemy);
+        var c1 = GameStateFixture.Char(1, hp: 20, pos: 1, prep: GameStateFixture.Prep());
+        c1.PortraitArt = "res://char.png";
+        var gs = GameStateFixture.State(1, tl, c1);
+        gs.EnemySlotCount = 4;
+        gs.CharSlotCount = 3;
+        gs.Apply(new PlayerAction(1, ActionType.Skip));
+
+        var clone = gs.Clone();
+
+        Assert.Equal(4, clone.EnemySlotCount);
+        Assert.Equal(3, clone.CharSlotCount);
+        Assert.Equal("res://char.png", clone.Characters[0].PortraitArt);
+        Assert.Equal("res://enemy.png", clone.Enemies[0].PortraitArt);
+        Assert.Single(clone.ActionHistory);
+    }
+
+    [Fact]
     public void DrawPile_ReshufflesDiscard_WhenEmpty()
     {
         var tl = GameStateFixture.TimelineOf(3);
@@ -161,5 +225,65 @@ public class CoreTests
         gs.Apply(new PlayerAction(1, ActionType.Skip));
 
         Assert.Equal(10, c1.Hp);                       // 位2无人→打前排，受 10 伤
+    }
+
+    // ---- 突=位2，多人阵容时应打第二位（不落空、不打前排） ----
+    [Fact]
+    public void ThrustEnemy_HitsPosition2WhenMultipleCharacters()
+    {
+        var tl = GameStateFixture.TimelineOf(3);
+        var enemy = GameStateFixture.Enemy(1, slot: 1, EnemyKind.Thrust, power: 10); // 打位2
+        tl.Enemies.Add(enemy);
+        var c1 = GameStateFixture.Char(1, hp: 20, pos: 1, prep: GameStateFixture.Prep());
+        var c2 = GameStateFixture.Char(2, hp: 20, pos: 2, prep: GameStateFixture.Prep());
+        var gs = GameStateFixture.State(1, tl, c1, c2);
+
+        gs.Apply(new PlayerAction(1, ActionType.Skip));
+
+        Assert.Equal(20, c1.Hp);   // 位1 不受击
+        Assert.Equal(10, c2.Hp);   // 位2 受 10 伤
+    }
+
+    // ---- 真实突刺链（蓄力→攻击位2→待机），多次推进：攻击步应稳定打位2 ----
+    [Fact]
+    public void ThrustEnemy_ChargeAttackChain_AlwaysHitsPosition2()
+    {
+        var tl = GameStateFixture.TimelineOf(3);
+        var enemy = new Enemy { Id = 1, Name = "突刺兵", Kind = EnemyKind.Thrust, Power = 4, NodeSlot = 1, Hp = 100, Position = 1 };
+        enemy.ActionChain.AddRange(new EnemyAction[] {
+            new EnemyAction.Charge(2),
+            new EnemyAction.Attack(4, 2),
+            new EnemyAction.Idle(),
+        });
+        tl.Enemies.Add(enemy);
+        var c1 = GameStateFixture.Char(1, hp: 50, pos: 1, prep: GameStateFixture.Prep());
+        var c2 = GameStateFixture.Char(2, hp: 50, pos: 2, prep: GameStateFixture.Prep());
+        var gs = GameStateFixture.State(1, tl, c1, c2);
+
+        // 推进 4 格：突刺在 slot1 触发两次（Charge → Attack），攻击步应打位2
+        for (int i = 0; i < 4; i++) gs.Apply(new PlayerAction(1, ActionType.Skip));
+
+        Assert.Equal(50, c1.Hp);                                         // 位1 始终不受击
+        Assert.True(c2.Hp < 50, $"位2 应被突刺打中，实际 hp={c2.Hp}");        // 位2 必须受击
+        Assert.Contains(gs.Events, e => e is GameEvent.DamageDealt d && !d.TargetIsEnemy && d.TargetId == 2);
+    }
+
+    // ---- 近战出牌：先暴露到前排再推进指针，敌人打的是已暴露的出牌者而非原前排 ----
+    [Fact]
+    public void MeleeAttack_ExposesBeforeEnemiesTrigger()
+    {
+        var tl = GameStateFixture.TimelineOf(4);
+        var enemy = GameStateFixture.Enemy(1, slot: 2, EnemyKind.Slash, power: 5, hp: 100); // 斩=打角色位1
+        tl.Enemies.Add(enemy);
+        var a = GameStateFixture.Char(1, hp: 50, pos: 1, prep: GameStateFixture.Prep());
+        var b = GameStateFixture.Char(2, hp: 50, pos: 2, prep: GameStateFixture.Prep());
+        var gs = GameStateFixture.State(1, tl, a, b);
+
+        var atk = GameStateFixture.Card(GameStateFixture.Attack(cost: 2, damage: 3)); // 近战斩击
+        b.Hand.Add(atk);
+        gs.Apply(new PlayerAction(2, ActionType.PlayCard, atk.InstanceId, TargetEnemyId: 1));
+
+        Assert.Equal(50, a.Hp);   // A 被挤到位2，不挨打
+        Assert.Equal(45, b.Hp);   // B 暴露到位1，挨敌人 5 伤
     }
 }

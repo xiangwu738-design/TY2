@@ -11,7 +11,7 @@ namespace Tongyuan.UI;
 public partial class CardView : Panel
 {
     public Card? Card { get; private set; }
-    public Character? Owner { get; private set; }
+    public new Character? Owner { get; private set; }
     public Action<CardView>? OnClicked;       // 弹窗/奖励等点击场景
     public Action<CardView>? OnHovered;
     public Action<CardView>? OnUnhovered;
@@ -36,6 +36,7 @@ public partial class CardView : Panel
 
     private Label _cost = null!;
     private Label _enchant = null!;
+    private TextureRect _frameTex = null!;
     private ColorRect _art = null!;
     private TextureRect _artTex = null!;
     private Label _name = null!;
@@ -51,11 +52,12 @@ public partial class CardView : Panel
     private Vector2 _origin;
     private int _baseZIndex;
 
-    public static readonly Vector2 CardSize = new(184, 268);
+    public static readonly Vector2 CardSize = new(216, 346);
 
     public override void _Ready()
     {
         CustomMinimumSize = CardSize;
+        TextureFilter = TextureFilterEnum.LinearWithMipmapsAnisotropic;
         if (!_built) BuildInternals();
         MouseFilter = MouseFilterEnum.Stop;
         MouseEntered += () => { _hovering = true; OnHovered?.Invoke(this); AnimateHover(true); };
@@ -76,64 +78,144 @@ public partial class CardView : Panel
         _tooltip.AddThemeStyleboxOverride("normal", tbg);
         AddChild(_tooltip);
 
-        var vb = new VBoxContainer();
-        vb.SetAnchorsPreset(LayoutPreset.FullRect);
-        vb.OffsetLeft = 8; vb.OffsetTop = 8; vb.OffsetRight = -8; vb.OffsetBottom = -8;
-        vb.AddThemeConstantOverride("separation", 4);
-        AddChild(vb);
+        _art = new ColorRect
+        {
+            Position = new Vector2(47f, 46f),
+            Size = new Vector2(169f, 221f),
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(_art);
 
-        // 顶部：费用球
-        _cost = new Label { Text = "0", HorizontalAlignment = HorizontalAlignment.Center };
-        _cost.AddThemeFontSizeOverride("font_size", 18);
-        _cost.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.3f));
-        vb.AddChild(_cost);
+        _artTex = new TextureRect
+        {
+            Position = _art.Position,
+            Size = _art.Size,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
+            TextureFilter = TextureFilterEnum.LinearWithMipmapsAnisotropic,
+            Visible = false,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(_artTex);
+
+        _frameTex = new TextureRect
+        {
+            Position = Vector2.Zero,
+            Size = CardSize,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
+            TextureFilter = TextureFilterEnum.LinearWithMipmapsAnisotropic,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(_frameTex);
+
+        // 顶部：费用
+        _cost = new Label
+        {
+            Text = "0",
+            Position = new Vector2(27f, 4f),
+            Size = new Vector2(56f, 42f),
+            Rotation = -0.37f,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _cost.AddThemeFontSizeOverride("font_size", 34);
+        _cost.AddThemeFontOverride("font", UiPalette.CardFont());
+        _cost.AddThemeColorOverride("font_color", new Color(0.08f, 0.08f, 0.09f));
+        AddChild(_cost);
 
         // 附魔徽标（右上角，文档 §五：附魔要看得见）
-        _enchant = new Label { Text = "", ZIndex = 5 };
+        _enchant = new Label { Text = "", ZIndex = 5, MouseFilter = MouseFilterEnum.Ignore };
         _enchant.SetAnchorsPreset(LayoutPreset.TopRight);
-        _enchant.OffsetLeft = -60; _enchant.OffsetTop = 6; _enchant.OffsetRight = -6;
-        _enchant.AddThemeFontSizeOverride("font_size", 14);
+        _enchant.OffsetLeft = -86; _enchant.OffsetTop = 10; _enchant.OffsetRight = -10;
+        _enchant.AddThemeFontSizeOverride("font_size", 17);
+        _enchant.AddThemeFontOverride("font", UiPalette.CardFont());
         _enchant.AddThemeColorOverride("font_color", UiPalette.VulnGold);
         AddChild(_enchant);
 
-        // 卡图区（技能图片：CardDef.ArtPath；无图则占位色块）
-        _art = new ColorRect { CustomMinimumSize = new Vector2(0, 96) };
-        vb.AddChild(_art);
-        _artTex = new TextureRect { CustomMinimumSize = new Vector2(0, 96), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, Visible = false };
-        vb.AddChild(_artTex);
+        _name = new Label
+        {
+            Position = new Vector2(58f, 37f),
+            Size = new Vector2(154f, 43f),
+            Rotation = -0.34f,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _name.AddThemeFontSizeOverride("font_size", 26);
+        _name.AddThemeFontOverride("font", UiPalette.CardFont());
+        _name.AddThemeColorOverride("font_color", Colors.White);
+        AddChild(_name);
 
-        _name = new Label { HorizontalAlignment = HorizontalAlignment.Center };
-        _name.AddThemeFontSizeOverride("font_size", 15);
-        vb.AddChild(_name);
+        _type = new Label
+        {
+            Position = new Vector2(5f, 95f),
+            Size = new Vector2(92f, 24f),
+            Rotation = -Mathf.Pi / 2f,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _type.AddThemeFontSizeOverride("font_size", 14);
+        _type.AddThemeFontOverride("font", UiPalette.CardFont());
+        _type.AddThemeColorOverride("font_color", Colors.White);
+        AddChild(_type);
 
-        _type = new Label { HorizontalAlignment = HorizontalAlignment.Center };
-        _type.AddThemeFontSizeOverride("font_size", 11);
-        _type.AddThemeColorOverride("font_color", new Color(0.7f, 0.75f, 0.85f));
-        vb.AddChild(_type);
+        _desc = new Label
+        {
+            Position = new Vector2(58f, 262f),
+            Size = new Vector2(152f, 62f),
+            Rotation = -0.32f,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _desc.AddThemeFontSizeOverride("font_size", 16);
+        _desc.AddThemeFontOverride("font", UiPalette.CardFont());
+        _desc.AddThemeColorOverride("font_color", new Color(0.04f, 0.04f, 0.05f));
+        AddChild(_desc);
 
-        _desc = new Label { HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsVertical = SizeFlags.ExpandFill };
-        _desc.AddThemeFontSizeOverride("font_size", 11);
-        _desc.AddThemeColorOverride("font_color", new Color(0.82f, 0.85f, 0.9f));
-        vb.AddChild(_desc);
-
-        // 底部稀有度宝石
-        _rarity = new ColorRect { CustomMinimumSize = new Vector2(0, 8), Color = Colors.Gray };
-        vb.AddChild(_rarity);
+        _rarity = new ColorRect
+        {
+            Position = new Vector2(7f, CardSize.Y - 8f),
+            Size = new Vector2(CardSize.X - 14f, 4f),
+            Color = Colors.Gray,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(_rarity);
     }
 
     /// <summary>填充卡牌数据。</summary>
-    public void Setup(Card card, Character owner)
+    public void Setup(Card card, Character? owner)
     {
         Card = card; Owner = owner;
         var def = card.Def;
         if (!_built) BuildInternals();
-        AddThemeStyleboxOverride("panel", UiPalette.CardStyle(def));
+        AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        SetFrameTexture(FramePathFor(def));
+        var ink = InkColorFor(def);
 
+        _cost.Visible = true;
         _cost.Text = def.Cost.ToString();
+        _cost.AddThemeColorOverride("font_color", ink);
         _name.Text = def.Name;
         string typeTag = def.Type == CardType.Attack ? CardDef.DamageText(def.DamageType) : def.Type.ToString();
         _type.Text = $"〔{typeTag}〕";
-        _desc.Text = def.EffectDescription();
+        _type.Visible = false;
+        // 攻击牌：伤害直接显示实际值（基础+力量附魔），有力量加成时整段绿色高亮
+        if (def.Type == CardType.Attack)
+        {
+            int eff = card.EffectiveAttack;
+            bool buffed = eff > def.Magnitude;
+            _desc.Text = $"{CardDef.DamageText(def.DamageType)} {eff} 伤{(def.DamageType == DamageType.Ranged ? "·自选敌·不位移" : "·近战·出牌移位1")}";
+            _desc.AddThemeColorOverride("font_color", buffed ? new Color(0.02f, 0.40f, 0.14f) : ink);
+        }
+        else
+        {
+            _desc.Text = def.EffectDescription();
+            _desc.AddThemeColorOverride("font_color", ink);
+        }
         _rarity.Color = UiPalette.RarityBorder(def.Rarity);
         _art.Color = UiPalette.CardBg(def).Lightened(0.18f);
 
@@ -150,6 +232,105 @@ public partial class CardView : Panel
         {
             _artTex.Visible = false;
         }
+    }
+
+    public void SetupEnemyAction(Enemy enemy, EnemyAction action)
+    {
+        Card = null;
+        Owner = null;
+        if (!_built) BuildInternals();
+
+        AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        SetFrameTexture("res://art/cards/frame_ability.png");
+        DragPlay = false;
+        Targeting = TargetKind.None;
+        _cost.Visible = false;
+        _type.Visible = false;
+        _enchant.Text = "";
+        _artTex.Visible = false;
+
+        var (name, type, desc, bg, border, rarity) = EnemyActionCardData(enemy, action);
+        _name.Text = name;
+        _type.Text = type;
+        _desc.Text = desc;
+        _desc.AddThemeColorOverride("font_color", new Color(0.11f, 0.12f, 0.53f));
+        _art.Color = bg.Lightened(0.18f);
+        _rarity.Color = rarity;
+
+        _cost.Visible = false;
+    }
+
+    private void SetFrameTexture(string path)
+    {
+        if (ResourceLoader.Exists(path) && ResourceLoader.Load(path) is Texture2D tex)
+            _frameTex.Texture = tex;
+    }
+
+    private static string FramePathFor(CardDef def)
+    {
+        if (def.Type == CardType.Attack)
+        {
+            return def.DamageType switch
+            {
+                DamageType.Blunt => "res://art/cards/frame_blunt.png",
+                DamageType.Slash => "res://art/cards/frame_slash.png",
+                DamageType.Thrust => "res://art/cards/frame_thrust.png",
+                DamageType.Ranged => "res://art/cards/frame_ranged.png",
+                _ => "res://art/cards/frame_slash.png",
+            };
+        }
+
+        return def.Type switch
+        {
+            CardType.Skill => "res://art/cards/frame_skill.png",
+            CardType.Prep => "res://art/cards/frame_ability.png",
+            CardType.Defense => "res://art/cards/frame_ability.png",
+            _ => "res://art/cards/frame_ability.png",
+        };
+    }
+
+    private static Color InkColorFor(CardDef def)
+    {
+        return def.Type == CardType.Skill || def.Type == CardType.Prep || def.Type == CardType.Defense
+            ? new Color(0.11f, 0.12f, 0.53f)
+            : new Color(0.04f, 0.04f, 0.05f);
+    }
+
+    private static (string Name, string Type, string Desc, Color Bg, Color Border, Color Rarity) EnemyActionCardData(Enemy enemy, EnemyAction action)
+    {
+        return action switch
+        {
+            EnemyAction.Attack a => (
+                "敌方攻击",
+                a.TargetPos == -1 ? "【全体】" : a.TargetPos == 1 ? "【前排】" : a.TargetPos == 2 ? "【二位】" : "【攻击】",
+                a.TargetPos == -1
+                    ? $"对我方全体造成 {a.Amount + enemy.Charge} 点伤害。"
+                    : $"对我方位置 {(a.TargetPos ?? enemy.TargetPosition)} 造成 {a.Amount + enemy.Charge} 点伤害。",
+                new Color(0.30f, 0.10f, 0.10f),
+                new Color(0.92f, 0.30f, 0.24f),
+                new Color(0.92f, 0.30f, 0.24f)),
+            EnemyAction.Charge c => (
+                "蓄力",
+                "【强化】",
+                $"获得 {c.Amount} 点蓄力。下次攻击会附加已储存的蓄力。",
+                new Color(0.28f, 0.20f, 0.08f),
+                new Color(0.95f, 0.68f, 0.20f),
+                new Color(0.95f, 0.68f, 0.20f)),
+            EnemyAction.Idle => (
+                "待机",
+                "【空过】",
+                "这一步不行动。",
+                new Color(0.16f, 0.17f, 0.20f),
+                new Color(0.55f, 0.58f, 0.64f),
+                new Color(0.55f, 0.58f, 0.64f)),
+            _ => (
+                "未知行动",
+                "【？】",
+                "未知的敌方行动。",
+                new Color(0.16f, 0.17f, 0.20f),
+                Colors.Gray,
+                Colors.Gray),
+        };
     }
 
     public void SetBaseZIndex(int z)

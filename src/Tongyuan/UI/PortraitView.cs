@@ -1,4 +1,6 @@
 using Godot;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Tongyuan.Core.Core;
 using Tongyuan.Views;
@@ -6,39 +8,53 @@ using Tongyuan.Views;
 namespace Tongyuan.UI;
 
 /// <summary>
-/// 头像组件：立绘(PortraitController) + 名牌 + HP条 + 位置/意图 + 状态。
-/// 使用 Panel（非 PanelContainer）以避免容器强制覆盖手动布局的子节点位置。
-/// 布局：立绘区（上）→ 名称 → 子信息 → HP条 → HP文字 → 状态（下）。
+/// Battle portrait panel: portrait art, name, HP bar, enemy intent badges, and hit feedback.
+/// The children are positioned manually so battle layout can use a stable fixed slot size.
 /// </summary>
 public partial class PortraitView : Panel
 {
     [Signal] public delegate void ClickedEventHandler();
+    [Signal] public delegate void RightClickedEventHandler(Vector2 screenPos);
+
+    public static readonly Vector2 SlotSize = new(156, 278);
 
     public PortraitController Portrait { get; private set; } = null!;
+
     private Label _name = null!;
     private Label _sub = null!;
-    private ProgressBar _hp = null!;
+    private ColorRect _hpBg = null!;
+    private ColorRect _hpFill = null!;
+    private ColorRect _shieldFill = null!;
     private Label _hpText = null!;
     private Label _status = null!;
     private ColorRect _aimGlow = null!;
     private ColorRect _flash = null!;
     private ColorRect _targetGlow = null!;
+    private PanelContainer _intentBadge = null!;
+    private Label _intentLabel = null!;
+    private PanelContainer _countdownBadge = null!;
+    private Label _countdownLabel = null!;
+
     private bool _aimed;
     private float _time;
     private bool _built;
+    private Tween? _punchTween;
 
-    // 布局常量
-    private const int W = 140;
-    private const int PortraitCx = W / 2;        // 立绘中心 x
-    private const int PortraitCy = 68;            // 立绘中心 y
-    private const int PortraitW = 80;
-    private const int PortraitH = 112;            // 半高 = 56 → 占 y=12..124
-    private const int InfoY = 130;                // 信息区起始 y（立绘底 y=124 + 6px gap）
-    private const int TotalH = 240;
+    private const int W = 156;
+    private const int PortraitCx = W / 2;
+    private const int PortraitCy = 102;
+    private const int PortraitW = 128;
+    private const int PortraitH = 128;
+    private const int InfoY = 166;
+    private const int BarX = 10;
+    private const int BarW = W - 16;
+    private const int BarH = 20;
+    private const int BarY = InfoY + 58;
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(W, TotalH);
+        CustomMinimumSize = SlotSize;
+        Size = SlotSize;
         if (!_built) Build();
         MouseFilter = MouseFilterEnum.Stop;
     }
@@ -46,56 +62,152 @@ public partial class PortraitView : Panel
     private void Build()
     {
         _built = true;
+        CustomMinimumSize = SlotSize;
+        Size = SlotSize;
 
-        // 立绘（Node2D，手动定位；Panel 不干预 Node2D 子节点）
-        Portrait = new PortraitController { DrawW = PortraitW, DrawH = PortraitH, Position = new Vector2(PortraitCx, PortraitCy) };
+        Portrait = new PortraitController
+        {
+            DrawW = PortraitW,
+            DrawH = PortraitH,
+            Position = new Vector2(PortraitCx, PortraitCy),
+        };
         AddChild(Portrait);
 
-        // 名称
-        _name = new Label { Position = new Vector2(0, InfoY), Size = new Vector2(W, 22), HorizontalAlignment = HorizontalAlignment.Center };
-        _name.AddThemeFontSizeOverride("font_size", 13);
+        _name = new Label
+        {
+            Position = new Vector2(0, InfoY),
+            Size = new Vector2(W, 22),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _name.AddThemeFontSizeOverride("font_size", 14);
         AddChild(_name);
 
-        // 副信息（位置/意图）
-        _sub = new Label { Position = new Vector2(2, InfoY + 24), Size = new Vector2(W - 4, 32), HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _sub.AddThemeFontSizeOverride("font_size", 10);
+        _sub = new Label
+        {
+            Position = new Vector2(2, InfoY + 24),
+            Size = new Vector2(W - 4, 30),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        _sub.AddThemeFontSizeOverride("font_size", 11);
         _sub.AddThemeColorOverride("font_color", new Color(0.85f, 0.7f, 0.4f));
         AddChild(_sub);
 
-        // HP 条（更高更醒目，经典 RPG 风格）
-        _hp = new ProgressBar { Position = new Vector2(8, InfoY + 60), Size = new Vector2(W - 16, 18), MinValue = 0 };
-        AddChild(_hp);
+        _hpBg = new ColorRect
+        {
+            Color = new Color(0.12f, 0.12f, 0.12f),
+            Position = new Vector2(BarX, BarY),
+            Size = new Vector2(BarW, BarH),
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(_hpBg);
 
-        // HP 数字
-        _hpText = new Label { Position = new Vector2(0, InfoY + 80), Size = new Vector2(W, 14), HorizontalAlignment = HorizontalAlignment.Center };
-        _hpText.AddThemeFontSizeOverride("font_size", 10);
+        _hpFill = new ColorRect
+        {
+            Color = new Color(0.75f, 0.18f, 0.18f),
+            Position = new Vector2(BarX, BarY),
+            Size = new Vector2(BarW, BarH),
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        AddChild(_hpFill);
+
+        _shieldFill = new ColorRect
+        {
+            Color = new Color(0.28f, 0.58f, 1f, 0.65f),
+            Position = new Vector2(BarX, BarY),
+            Size = Vector2.Zero,
+            MouseFilter = MouseFilterEnum.Ignore,
+            Visible = false,
+        };
+        AddChild(_shieldFill);
+
+        _hpText = new Label
+        {
+            Position = new Vector2(BarX, BarY),
+            Size = new Vector2(BarW, BarH),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _hpText.AddThemeFontSizeOverride("font_size", 11);
+        _hpText.AddThemeColorOverride("font_color", Colors.White);
+        _hpText.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.85f));
+        _hpText.AddThemeConstantOverride("shadow_offset_x", 1);
+        _hpText.AddThemeConstantOverride("shadow_offset_y", 1);
         AddChild(_hpText);
 
-        // 状态栏
-        _status = new Label { Position = new Vector2(0, InfoY + 96), Size = new Vector2(W, 14), HorizontalAlignment = HorizontalAlignment.Center };
+        _status = new Label
+        {
+            Position = new Vector2(0, BarY + BarH + 4),
+            Size = new Vector2(W, 14),
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
         _status.AddThemeFontSizeOverride("font_size", 10);
         AddChild(_status);
 
-        // 被瞄准脉动光晕
-        _aimGlow = new ColorRect { Color = new Color(UiPalette.WarnOrange.R, UiPalette.WarnOrange.G, UiPalette.WarnOrange.B, 0f), MouseFilter = MouseFilterEnum.Ignore };
+        _aimGlow = new ColorRect
+        {
+            Color = new Color(UiPalette.WarnOrange.R, UiPalette.WarnOrange.G, UiPalette.WarnOrange.B, 0f),
+            MouseFilter = MouseFilterEnum.Ignore,
+            Visible = false,
+        };
         _aimGlow.SetAnchorsPreset(LayoutPreset.FullRect);
-        _aimGlow.Visible = false;
         AddChild(_aimGlow);
-        // 受击闪白
+
         _flash = new ColorRect { Color = new Color(1, 1, 1, 0), MouseFilter = MouseFilterEnum.Ignore };
         _flash.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_flash);
-        // 被指向高亮
-        _targetGlow = new ColorRect { Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0f), MouseFilter = MouseFilterEnum.Ignore };
+
+        _targetGlow = new ColorRect
+        {
+            Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0f),
+            MouseFilter = MouseFilterEnum.Ignore,
+            Visible = false,
+        };
         _targetGlow.SetAnchorsPreset(LayoutPreset.FullRect);
-        _targetGlow.Visible = false;
         AddChild(_targetGlow);
+
+        _intentBadge = new PanelContainer
+        {
+            Position = new Vector2(58f, 10f),
+            CustomMinimumSize = new Vector2(86f, 30f),
+            Visible = false,
+        };
+        _intentLabel = new Label
+        {
+            MouseFilter = MouseFilterEnum.Ignore,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _intentLabel.AddThemeFontSizeOverride("font_size", 15);
+        _intentLabel.AddThemeColorOverride("font_color", Colors.White);
+        _intentBadge.AddChild(_intentLabel);
+        AddChild(_intentBadge);
+
+        _countdownBadge = new PanelContainer
+        {
+            Position = new Vector2(12f, 8f),
+            CustomMinimumSize = new Vector2(38f, 34f),
+            Visible = false,
+        };
+        _countdownLabel = new Label
+        {
+            MouseFilter = MouseFilterEnum.Ignore,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _countdownLabel.AddThemeFontSizeOverride("font_size", 20);
+        _countdownLabel.AddThemeColorOverride("font_color", Colors.White);
+        _countdownLabel.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 0.85f));
+        _countdownLabel.AddThemeConstantOverride("shadow_offset_x", 1);
+        _countdownLabel.AddThemeConstantOverride("shadow_offset_y", 1);
+        _countdownBadge.AddChild(_countdownLabel);
+        AddChild(_countdownBadge);
     }
 
     public void Highlight(bool on)
     {
         _targetGlow.Visible = on;
-        if (on) _targetGlow.Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0.30f);
+        if (on)
+            _targetGlow.Color = new Color(UiPalette.VulnGold.R, UiPalette.VulnGold.G, UiPalette.VulnGold.B, 0.30f);
     }
 
     public override void _Process(double delta)
@@ -108,60 +220,156 @@ public partial class PortraitView : Panel
         }
     }
 
-    public void SetupCharacter(Character c, bool isActive, bool aimed)
+    public void SetupCharacter(Character c, bool isActive, bool aimed, IReadOnlyList<Shield>? shields = null)
     {
         if (!_built) Build();
+        MouseFilter = MouseFilterEnum.Stop;
+        Portrait.Visible = true;
         Portrait.BoundCharacterId = c.Id;
         Portrait.BoundEnemyId = -1;
         Portrait.IdleBreath = c.IsAlive;
         Portrait.Tint = UiPalette.ColorOf(c.Color);
         Portrait.SetArt(c.PortraitArt);
+        Portrait.SetSpriteSheet(c.PortraitSheet);
         if (!c.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
 
-        _name.Text = (isActive ? "▶ " : "") + c.Name;
-        _name.AddThemeColorOverride("font_color", UiPalette.ColorOf(c.Color).Lightened(0.2f));
+        var roleColor = UiPalette.ColorOf(c.Color);
+        _name.Text = (isActive ? "> " : "") + c.Name;
+        _name.AddThemeColorOverride("font_color", roleColor.Lightened(0.2f));
         _sub.Text = $"位 {c.Position}";
-        _hp.MaxValue = c.MaxHp > 0 ? c.MaxHp : 1;
-        _hp.Value = c.Hp;
-        _hpText.Text = $"HP {c.Hp} / {c.MaxHp}";
-        _status.Text = "";
 
-        var bg = UiPalette.ColorOf(c.Color).Darkened(isActive ? 0.45f : 0.72f);
-        var border = aimed ? UiPalette.WarnOrange : (isActive ? Colors.White : UiPalette.ColorOf(c.Color));
-        ApplyStyle(bg, border, 3);
+        float hpRatio = c.MaxHp > 0 ? Math.Clamp((float)c.Hp / c.MaxHp, 0f, 1f) : 0f;
+        _hpFill.Color = hpRatio > 0.4f ? roleColor.Darkened(0.2f) : new Color(0.80f, 0.15f, 0.15f);
+        _hpFill.Size = new Vector2(BarW * hpRatio, BarH);
+
+        int totalShield = 0;
+        if (shields is not null)
+        {
+            foreach (var sh in shields)
+                if (!sh.IsExhausted)
+                    totalShield += sh.Type == ShieldType.Fixed ? sh.Amount : sh.Amount * sh.RemainingHits;
+        }
+
+        float shieldRatio = c.MaxHp > 0 ? Math.Clamp((float)totalShield / c.MaxHp, 0f, 1f) : 0f;
+        _shieldFill.Size = new Vector2(BarW * shieldRatio, BarH);
+        _shieldFill.Visible = totalShield > 0;
+        _hpText.Text = totalShield > 0 ? $"{c.Hp}/{c.MaxHp} +{totalShield}" : $"{c.Hp}/{c.MaxHp}";
+        _status.Text = "";
+        _intentBadge.Visible = false;
+        _countdownBadge.Visible = false;
+
+        ApplyStyle(roleColor.Darkened(isActive ? 0.45f : 0.72f), aimed ? UiPalette.WarnOrange : (isActive ? Colors.White : roleColor), 3);
         _aimed = aimed;
         _aimGlow.Visible = aimed;
     }
 
-    public void SetupEnemy(Enemy e, bool clickable, bool aimed)
+    public void SetupEnemy(Enemy e, bool clickable, bool aimed, int countdown = 0)
     {
         if (!_built) Build();
+        MouseFilter = MouseFilterEnum.Stop;
+        Portrait.Visible = true;
         Portrait.BoundEnemyId = e.Id;
         Portrait.BoundCharacterId = -1;
         Portrait.IdleBreath = e.IsAlive;
         Portrait.Tint = UiPalette.EnemyColor(e.Kind);
         Portrait.SetArt(e.PortraitArt);
+        Portrait.SetSpriteSheet(e.PortraitSheet);
         if (!e.IsAlive) Portrait.ToDown(); else Portrait.ToIdle();
 
-        _name.Text = e.IsAlive ? e.Name : $"{e.Name}×";
+        _name.Text = e.IsAlive ? e.Name : $"{e.Name} X";
         _name.AddThemeColorOverride("font_color", new Color(1f, 0.6f, 0.6f));
-        _sub.Text = $"格{e.NodeSlot} · {UiPalette.KindText(e.Kind)} · {IntentText(e)}";
-        _hp.MaxValue = e.Hp > 0 ? e.Hp : 1;
-        _hp.Value = e.Hp;
-        _hpText.Text = $"HP {e.Hp}";
-        int vuln = e.Statuses.Where(s => s.Type == EnchantmentType.Vulnerable).Sum(s => s.Magnitude);
-        int vulnT = e.Statuses.Where(s => s.Type == EnchantmentType.Vulnerable).Sum(s => s.Remaining);
-        var parts = new System.Collections.Generic.List<string>();
-        if (e.Charge > 0) parts.Add($"蓄+{e.Charge}");
-        if (vuln > 0) parts.Add($"易+{vuln}×{vulnT}");
-        _status.Text = string.Join(" ", parts);
-        _status.AddThemeColorOverride("font_color", UiPalette.VulnGold);
+        _sub.Text = "";
+
+        float hpRatio = e.MaxHp > 0 ? Math.Clamp((float)e.Hp / e.MaxHp, 0f, 1f) : (e.Hp > 0 ? 1f : 0f);
+        _hpFill.Color = hpRatio > 0.4f ? new Color(0.72f, 0.16f, 0.16f) : new Color(0.85f, 0.20f, 0.16f);
+        _hpFill.Size = new Vector2(BarW * hpRatio, BarH);
+        _hpText.Text = e.MaxHp > 0 ? $"{e.Hp}/{e.MaxHp}" : $"生命 {e.Hp}";
+        _shieldFill.Visible = false;
+        _status.Text = "";
 
         var bg = clickable ? new Color(0.30f, 0.16f, 0.10f) : new Color(0.20f, 0.10f, 0.10f);
         var border = clickable ? UiPalette.VulnGold : (aimed ? UiPalette.WarnOrange : new Color(0.85f, 0.35f, 0.35f));
         ApplyStyle(bg, border, 3);
         _aimed = false;
         _aimGlow.Visible = false;
+        UpdateIntentBadge(e, countdown);
+    }
+
+    public void SetupDeadCharacter(Character c)
+    {
+        if (!_built) Build();
+        Portrait.Visible = true;
+        Portrait.BoundCharacterId = c.Id;
+        Portrait.BoundEnemyId = -1;
+        Portrait.IdleBreath = false;
+        Portrait.Tint = new Color(0.4f, 0.4f, 0.4f);
+        Portrait.SetArt(c.PortraitArt);
+        Portrait.SetSpriteSheet(c.PortraitSheet);
+        Portrait.ToDown();
+
+        _name.Text = $"{c.Name} 倒地";
+        _name.AddThemeColorOverride("font_color", new Color(0.72f, 0.40f, 0.40f));
+        _sub.Text = $"位 {c.Position}";
+        _hpFill.Color = new Color(0.3f, 0.1f, 0.1f);
+        _hpFill.Size = Vector2.Zero;
+        _shieldFill.Visible = false;
+        _hpText.Text = "-";
+        _status.Text = "";
+        _intentBadge.Visible = false;
+        _countdownBadge.Visible = false;
+        ApplyStyle(new Color(0.18f, 0.08f, 0.08f), new Color(0.58f, 0.22f, 0.22f), 2);
+        _aimed = false;
+        _aimGlow.Visible = false;
+        MouseFilter = MouseFilterEnum.Ignore;
+    }
+
+    public void SetupDeadEnemy(Enemy e)
+    {
+        if (!_built) Build();
+        Portrait.Visible = true;
+        Portrait.BoundEnemyId = e.Id;
+        Portrait.BoundCharacterId = -1;
+        Portrait.IdleBreath = false;
+        Portrait.Tint = new Color(0.35f, 0.35f, 0.35f);
+        Portrait.SetArt(e.PortraitArt);
+        Portrait.SetSpriteSheet(e.PortraitSheet);
+        Portrait.ToDown();
+
+        _name.Text = $"{e.Name} 倒地";
+        _name.AddThemeColorOverride("font_color", new Color(0.72f, 0.40f, 0.40f));
+        _sub.Text = "";
+        _hpFill.Color = new Color(0.25f, 0.1f, 0.1f);
+        _hpFill.Size = Vector2.Zero;
+        _shieldFill.Visible = false;
+        _hpText.Text = e.MaxHp > 0 ? $"0/{e.MaxHp}" : "生命 0";
+        _status.Text = "";
+        UpdateDeadIntentBadge();
+        ApplyStyle(new Color(0.18f, 0.08f, 0.08f), new Color(0.58f, 0.22f, 0.22f), 2);
+        _aimed = false;
+        _aimGlow.Visible = false;
+        MouseFilter = MouseFilterEnum.Ignore;
+    }
+
+    public void SetupBannedSlot(int slotNumber)
+    {
+        if (!_built) Build();
+        Portrait.Visible = false;
+        _name.Text = $"位 {slotNumber}";
+        _name.AddThemeColorOverride("font_color", new Color(0.3f, 0.3f, 0.3f));
+        _sub.Text = "不可用";
+        _sub.AddThemeColorOverride("font_color", new Color(0.3f, 0.3f, 0.3f));
+        _hpBg.Color = new Color(0.08f, 0.08f, 0.08f);
+        _hpFill.Size = Vector2.Zero;
+        _shieldFill.Visible = false;
+        _hpText.Text = "-";
+        _hpText.AddThemeColorOverride("font_color", new Color(0.3f, 0.3f, 0.3f));
+        _status.Text = "";
+        _intentBadge.Visible = false;
+        _countdownBadge.Visible = false;
+        ApplyStyle(new Color(0.08f, 0.08f, 0.08f), new Color(0.2f, 0.2f, 0.2f), 1);
+        _aimed = false;
+        _aimGlow.Visible = false;
+        MouseFilter = MouseFilterEnum.Ignore;
     }
 
     public void OnEvent(GameEvent ev)
@@ -169,44 +377,109 @@ public partial class PortraitView : Panel
         Portrait.OnEvent(ev);
         if (ev is GameEvent.DamageDealt dd && dd.Amount > 0)
         {
-            bool me = dd.TargetIsEnemy ? dd.TargetId == Portrait.BoundEnemyId : dd.TargetId == Portrait.BoundCharacterId;
+            bool me = dd.TargetIsEnemy
+                ? dd.TargetId == Portrait.BoundEnemyId
+                : dd.TargetId == Portrait.BoundCharacterId;
             if (me) Flash();
         }
     }
 
     private void Flash()
     {
-        _flash.Color = new Color(1, 1, 1, 0.75f);
+        _flash.Color = new Color(1, 1, 1, 0.85f);
         var tw = CreateTween();
         tw.TweenProperty(_flash, "color:a", 0f, 0.22f).SetTrans(Tween.TransitionType.Cubic);
+    }
+
+    public void PunchAttack(bool toRight)
+    {
+        _punchTween?.Kill();
+        Portrait.Position = new Vector2(PortraitCx, PortraitCy);
+        Portrait.Modulate = Colors.White;
+
+        _punchTween = CreateTween().SetParallel(true);
+        _punchTween.TweenProperty(Portrait, "modulate", new Color(1.35f, 1.18f, 0.88f), 0.07f);
+        var chain = _punchTween.Chain().SetParallel(true);
+        chain.TweenProperty(Portrait, "modulate", Colors.White, 0.12f);
+    }
+
+    public void PlayCardAnimation(CardDef def) => Portrait.PlayCard(def);
+
+    public override void _GuiInput(InputEvent e)
+    {
+        if (e is not InputEventMouseButton mb || !mb.Pressed) return;
+        if (mb.ButtonIndex == MouseButton.Left)
+            EmitSignal(SignalName.Clicked);
+        else if (mb.ButtonIndex == MouseButton.Right)
+            EmitSignal(SignalName.RightClicked, GetGlobalMousePosition());
     }
 
     private void ApplyStyle(Color bg, Color border, int w)
     {
         var sb = new StyleBoxFlat { BgColor = bg, BorderColor = border };
-        sb.SetBorderWidthAll(w); sb.SetCornerRadiusAll(5);
-        sb.ContentMarginLeft = 4; sb.ContentMarginTop = 3; sb.ContentMarginRight = 4; sb.ContentMarginBottom = 3;
+        sb.SetBorderWidthAll(w);
+        sb.SetCornerRadiusAll(4);
+        sb.ContentMarginLeft = 6;
+        sb.ContentMarginTop = 6;
+        sb.ContentMarginRight = 6;
+        sb.ContentMarginBottom = 6;
         AddThemeStyleboxOverride("panel", sb);
     }
 
-    public override void _GuiInput(InputEvent e)
+    private void UpdateIntentBadge(Enemy e, int countdown)
     {
-        if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
-            EmitSignal(SignalName.Clicked);
+        var (text, bg) = e.NextAction switch
+        {
+            EnemyAction.Attack a => ($"攻 {a.Amount + e.Charge}", e.Charge > 0 ? new Color(0.30f, 0.72f, 0.38f) : new Color(0.80f, 0.18f, 0.15f)),
+            EnemyAction.Charge c => ($"蓄 +{c.Amount}", new Color(0.78f, 0.58f, 0.16f)),
+            EnemyAction.Idle => ("待机", new Color(0.30f, 0.30f, 0.34f)),
+            _ => ("?", new Color(0.30f, 0.30f, 0.34f)),
+        };
+        _intentLabel.Text = text;
+        var sb = new StyleBoxFlat { BgColor = bg, BorderColor = new Color(1f, 1f, 1f, 0.55f) };
+        sb.SetCornerRadiusAll(6);
+        sb.SetBorderWidthAll(1);
+        sb.ContentMarginLeft = 9;
+        sb.ContentMarginTop = 4;
+        sb.ContentMarginRight = 9;
+        sb.ContentMarginBottom = 4;
+        _intentBadge.AddThemeStyleboxOverride("panel", sb);
+        _intentBadge.Visible = true;
+
+        _countdownLabel.Text = countdown <= 0 ? "行" : countdown.ToString();
+        var csb = new StyleBoxFlat { BgColor = new Color(0.18f, 0.30f, 0.52f), BorderColor = new Color(1f, 1f, 1f, 0.5f) };
+        csb.SetCornerRadiusAll(10);
+        csb.SetBorderWidthAll(1);
+        csb.ContentMarginLeft = 8;
+        csb.ContentMarginTop = 2;
+        csb.ContentMarginRight = 8;
+        csb.ContentMarginBottom = 2;
+        _countdownBadge.AddThemeStyleboxOverride("panel", csb);
+        _countdownBadge.Visible = true;
     }
 
-    private static string IntentText(Enemy e)
+    private void UpdateDeadIntentBadge()
     {
-        if (!e.IsAlive) return "—";
-        return e.NextAction switch
-        {
-            EnemyAction.Attack a => a.TargetPos == -1 ? $"打全体 {a.Amount + e.Charge}"
-                                   : a.TargetPos == 1 ? $"斩位1 {a.Amount + e.Charge}"
-                                   : a.TargetPos == 2 ? $"突位2 {a.Amount + e.Charge}"
-                                   : $"{a.Amount + e.Charge}伤",
-            EnemyAction.Charge c => $"蓄力+{c.Amount}",
-            EnemyAction.Idle => "待机",
-            _ => "?",
-        };
+        _intentLabel.Text = "倒地";
+        var sb = new StyleBoxFlat { BgColor = new Color(0.24f, 0.24f, 0.26f), BorderColor = new Color(1f, 1f, 1f, 0.35f) };
+        sb.SetCornerRadiusAll(6);
+        sb.SetBorderWidthAll(1);
+        sb.ContentMarginLeft = 9;
+        sb.ContentMarginTop = 4;
+        sb.ContentMarginRight = 9;
+        sb.ContentMarginBottom = 4;
+        _intentBadge.AddThemeStyleboxOverride("panel", sb);
+        _intentBadge.Visible = true;
+
+        _countdownLabel.Text = "X";
+        var csb = new StyleBoxFlat { BgColor = new Color(0.16f, 0.18f, 0.22f), BorderColor = new Color(1f, 1f, 1f, 0.35f) };
+        csb.SetCornerRadiusAll(10);
+        csb.SetBorderWidthAll(1);
+        csb.ContentMarginLeft = 8;
+        csb.ContentMarginTop = 2;
+        csb.ContentMarginRight = 8;
+        csb.ContentMarginBottom = 2;
+        _countdownBadge.AddThemeStyleboxOverride("panel", csb);
+        _countdownBadge.Visible = true;
     }
 }

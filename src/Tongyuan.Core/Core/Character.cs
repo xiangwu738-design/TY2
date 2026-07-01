@@ -17,6 +17,7 @@ public sealed class Character
     public int DamageTakenThisFight { get; set; } // 本场累计受伤（结算下调上限用）
     /// <summary>立绘美术占位口（null=占位色块）。规格 §6：美术后填。</summary>
     public string? PortraitArt { get; set; }
+    public string? PortraitSheet { get; set; }
 
     public Card PrepCard { get; init; } = null!;      // 固定整备牌，常驻手牌
     public List<Card> Hand { get; } = new();          // 抽到的牌（不含整备）
@@ -56,21 +57,27 @@ public sealed class Character
         }
     }
 
-    /// <summary>易伤加成：受击时额外伤害（消耗一层）。</summary>
-    public int ConsumeVulnerableBonus()
+    /// <summary>易伤加成：受击时额外伤害（仅读取，不消耗——消耗改在行动时由 TickVulnerable 处理）。</summary>
+    public int VulnerableBonus()
     {
         int bonus = 0;
+        foreach (var s in Statuses)
+            if (s.Type == EnchantmentType.Vulnerable) bonus += s.Magnitude;
+        return bonus;
+    }
+
+    /// <summary>行动时消耗一层易伤（角色每次出牌 / 敌人每次行动调用）。</summary>
+    public void TickVulnerable()
+    {
         for (int i = Statuses.Count - 1; i >= 0; i--)
         {
             var s = Statuses[i];
             if (s.Type == EnchantmentType.Vulnerable)
             {
-                bonus += s.Magnitude;
                 s.Remaining--;
                 if (s.Remaining <= 0) Statuses.RemoveAt(i);
             }
         }
-        return bonus;
     }
 
     public Character Clone()
@@ -85,6 +92,8 @@ public sealed class Character
             Position = Position,
             IsDown = IsDown,
             DamageTakenThisFight = DamageTakenThisFight,
+            PortraitArt = PortraitArt,
+            PortraitSheet = PortraitSheet,
             PrepCard = PrepCard?.Clone()!,
         };
         foreach (var x in Hand) c.Hand.Add(x.Clone());

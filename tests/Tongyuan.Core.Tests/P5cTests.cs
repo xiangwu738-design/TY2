@@ -14,9 +14,9 @@ public class P5cTests
     private static GameState ThreeEnemies(out Enemy e1, out Enemy e2, out Enemy e3)
     {
         var tl = GameStateFixture.TimelineOf(3);
-        e1 = new Enemy { Id = 1, Kind = EnemyKind.Slash, Power = 99, NodeSlot = 1, Hp = 100, Position = 1 };
-        e2 = new Enemy { Id = 2, Kind = EnemyKind.Thrust, Power = 99, NodeSlot = 1, Hp = 100, Position = 2 };
-        e3 = new Enemy { Id = 3, Kind = EnemyKind.Strike, Power = 99, NodeSlot = 1, Hp = 100, Position = 3 };
+        e1 = new Enemy { Id = 1, Kind = EnemyKind.Slash, Power = 99, NodeSlot = 2, Hp = 100, Position = 1 };
+        e2 = new Enemy { Id = 2, Kind = EnemyKind.Thrust, Power = 99, NodeSlot = 2, Hp = 100, Position = 2 };
+        e3 = new Enemy { Id = 3, Kind = EnemyKind.Strike, Power = 99, NodeSlot = 2, Hp = 100, Position = 3 };
         tl.Enemies.Add(e1); tl.Enemies.Add(e2); tl.Enemies.Add(e3);
         var c = GameStateFixture.Char(1, hp: 50, pos: 1, prep: GameStateFixture.Prep());
         return GameStateFixture.State(1, tl, c);
@@ -78,7 +78,7 @@ public class P5cTests
 
     // 敌人阵亡收缩：保持 1..M 连续
     [Fact]
-    public void EnemyDeath_ContractsPositions()
+    public void EnemyDeath_MovesCorpseToBack()
     {
         var gs = ThreeEnemies(out var e1, out var e2, out var e3);
         e1.Hp = 1;
@@ -86,8 +86,10 @@ public class P5cTests
         gs.Characters[0].Hand.Add(card);
         gs.Apply(new PlayerAction(1, ActionType.PlayCard, card.InstanceId));
         Assert.False(e1.IsAlive);
-        Assert.Equal(1, e2.Position); // 补位
+        Assert.Equal(3, e1.Position);
+        Assert.Equal(1, e2.Position);
         Assert.Equal(2, e3.Position);
+        Assert.Contains(e1, gs.Timeline.Enemies);
     }
 
     // 远程：自选敌人且不位移

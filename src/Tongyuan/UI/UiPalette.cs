@@ -10,6 +10,8 @@ namespace Tongyuan.UI;
 /// </summary>
 public static class UiPalette
 {
+    private static Font? _cardFont;
+
     // ---- 角色色（四色系统，文档 §五：玩家1朱红/2湛蓝/3翠绿/4琥珀）----
     public static readonly Color DamageColor = Hex("#D4453A");
     public static readonly Color DefenseColor = Hex("#3D7BD4");
@@ -36,6 +38,16 @@ public static class UiPalette
         int g = int.Parse(h.Substring(2, 2), NumberStyles.HexNumber);
         int b = int.Parse(h.Substring(4, 2), NumberStyles.HexNumber);
         return new Color(r / 255f, g / 255f, b / 255f);
+    }
+
+    public static Font CardFont()
+    {
+        if (_cardFont is not null) return _cardFont;
+        const string path = "res://art/fonts/YouSheBiaoTiHei.ttf";
+        _cardFont = ResourceLoader.Exists(path) && ResourceLoader.Load(path) is Font font
+            ? font
+            : new SystemFont { FontNames = new string[] { "YouSheBiaoTiHei", "Microsoft YaHei", "Segoe UI" } };
+        return _cardFont;
     }
 
     // ---- 卡牌底色 / 描边（按类型 + 伤害类型）----

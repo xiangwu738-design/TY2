@@ -2,6 +2,10 @@
 .godot/
 *.import
 
+# Godot 引擎本体（可从官网下载，不入库）
+tools/Godot_*.zip
+tools/Godot_*/
+
 # 构建产物
 /build/
 *.exe

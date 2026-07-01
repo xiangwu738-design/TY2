@@ -17,7 +17,7 @@ public class P5bTests
     public void RangedAttack_NoDisplacement_DamagesChosenEnemy()
     {
         var tl = GameStateFixture.TimelineOf(3);
-        var enemy = GameStateFixture.Enemy(1, slot: 1, EnemyKind.Slash, power: 99, hp: 100);
+        var enemy = GameStateFixture.Enemy(1, slot: 2, EnemyKind.Slash, power: 99, hp: 100);
         tl.Enemies.Add(enemy);
         var c1 = GameStateFixture.Char(1, hp: 20, pos: 1, prep: GameStateFixture.Prep());
         var c2 = GameStateFixture.Char(2, hp: 20, pos: 2, prep: GameStateFixture.Prep());
@@ -37,7 +37,7 @@ public class P5bTests
     public void MeleeAttack_DisplacesToFront()
     {
         var tl = GameStateFixture.TimelineOf(3);
-        var enemy = GameStateFixture.Enemy(1, slot: 1, EnemyKind.Slash, power: 99, hp: 100);
+        var enemy = GameStateFixture.Enemy(1, slot: 2, EnemyKind.Slash, power: 99, hp: 100);
         tl.Enemies.Add(enemy);
         var c1 = GameStateFixture.Char(1, hp: 20, pos: 1, prep: GameStateFixture.Prep());
         var c2 = GameStateFixture.Char(2, hp: 20, pos: 2, prep: GameStateFixture.Prep());

@@ -75,15 +75,71 @@ public static class CharacterTemplates
             Id = $"prep_{tpl.Id}", Name = tpl.Name + "·整备", Type = CardType.Prep,
             Cost = tpl.PrepTemplate.SlotCost, Effect = EffectKind.DrawCards,
             Magnitude = tpl.PrepTemplate.DrawCount,
+            Animation = CardAnimation.Item,
         };
         var c = new Character
         {
             Id = tpl.Id, Name = tpl.Name, Color = tpl.Color,
             Hp = tpl.BaseHp, MaxHp = tpl.BaseHp, Position = position,
+            PortraitArt = tpl.Archetype switch
+            {
+                RoleArchetype.Damage => "res://art/rmmz_sv_portraits/sv_damage.png",
+                RoleArchetype.Defense => "res://art/rmmz_sv_portraits/sv_defense.png",
+                RoleArchetype.Control => "res://art/rmmz_sv_portraits/sv_control.png",
+                RoleArchetype.Support => "res://art/rmmz_sv_portraits/sv_support.png",
+                _ => null,
+            },
+            PortraitSheet = tpl.Archetype switch
+            {
+                RoleArchetype.Damage => "res://art/rmmz_sv_sheets/sv_damage_sheet.png",
+                RoleArchetype.Defense => "res://art/rmmz_sv_sheets/sv_defense_sheet.png",
+                RoleArchetype.Control => "res://art/rmmz_sv_sheets/sv_control_sheet.png",
+                RoleArchetype.Support => "res://art/rmmz_sv_sheets/sv_support_sheet.png",
+                _ => null,
+            },
             PrepCard = new Card { Def = prepDef },
         };
         foreach (var def in tpl.CardPool)
+        {
+            ApplyDefaultAnimation(def);
             c.DrawPile.Add(new Card { Def = def });
+        }
         return c;
     }
+
+    private static void ApplyDefaultAnimation(CardDef def)
+    {
+        if (def.Animation != CardAnimation.Auto) return;
+        def.Animation = def.Id switch
+        {
+            "dmg_atk1" => CardAnimation.Swing,
+            "dmg_atk2" => CardAnimation.Swing,
+            "dmg_ranged" => CardAnimation.Missile,
+            "dmg_skill" => CardAnimation.Chant,
+            "def_shd1" => CardAnimation.Guard,
+            "def_shd2" => CardAnimation.Guard,
+            "def_atk" => CardAnimation.Thrust,
+            "ctl_enc1" => CardAnimation.Chant,
+            "ctl_enc2" => CardAnimation.Spell,
+            "ctl_atk" => CardAnimation.Thrust,
+            "sup_shd" => CardAnimation.Guard,
+            "sup_enc" => CardAnimation.Chant,
+            "sup_atk" => CardAnimation.Missile,
+            _ => AutoAnimation(def),
+        };
+    }
+
+    private static CardAnimation AutoAnimation(CardDef def) => def.Effect switch
+    {
+        EffectKind.ApplyShield => CardAnimation.Guard,
+        EffectKind.ApplyEnchantment => CardAnimation.Chant,
+        EffectKind.DrawCards => CardAnimation.Item,
+        EffectKind.AttackDamage => def.DamageType switch
+        {
+            DamageType.Thrust => CardAnimation.Thrust,
+            DamageType.Ranged => CardAnimation.Missile,
+            _ => CardAnimation.Swing,
+        },
+        _ => CardAnimation.Skill,
+    };
 }

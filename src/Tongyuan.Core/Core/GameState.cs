@@ -14,6 +14,11 @@ public sealed class GameState
     public List<Enemy> Enemies => Timeline.Enemies;
     public List<Shield> Shields { get; } = new(); // 活跃护盾（关系持续态）
 
+    /// <summary>战斗开始时的敌人槽数（1..4）。UI 据此渲染固定槽位，位置不因死亡收缩。</summary>
+    public int EnemySlotCount { get; set; }
+    /// <summary>战斗开始时的角色槽数（通常为4）。</summary>
+    public int CharSlotCount { get; set; }
+
     public int Seed { get; init; }
     public DeterministicRng Rng { get; set; }
 
@@ -35,8 +40,11 @@ public sealed class GameState
         var s = new GameState(Seed);
         s.Rng = Rng.Clone(); // 复制已推进的随机状态，保证预演确定性
         s.Timeline = Timeline.Clone();
+        s.EnemySlotCount = EnemySlotCount;
+        s.CharSlotCount = CharSlotCount;
         foreach (var c in Characters) s.Characters.Add(c.Clone());
         foreach (var sh in Shields) s.Shields.Add(sh.Clone());
+        s.ActionHistory.AddRange(ActionHistory);
         return s;
     }
 
@@ -46,52 +54,89 @@ public sealed class GameState
     public List<GameEvent> Apply(PlayerAction action)
     {
         Events.Clear();
-        ActionHistory.Add(action);
         var ch = Characters.Find(c => c.Id == action.CharacterId);
         if (ch is null || !ch.IsAlive) return Events;
 
+        bool applied = false;
         switch (action.Type)
         {
-            case ActionType.Skip: DoSkip(ch); break;
-            case ActionType.UsePrep: DoUsePrep(ch); break;
-            case ActionType.PlayCard: DoPlayCard(ch, action); break;
+            case ActionType.Skip: applied = DoSkip(ch); break;
+            case ActionType.UsePrep: applied = DoUsePrep(ch); break;
+            case ActionType.PlayCard: applied = DoPlayCard(ch, action); break;
         }
+        if (!applied) return Events;
+        ActionHistory.Add(action);
         Events.Add(new GameEvent.TurnEnded());
         return Events;
     }
 
     // ---- 空过：推进1格，无效果 ----
-    private void DoSkip(Character ch)
+    private bool DoSkip(Character ch)
     {
         AdvanceAndSettle(ch, 1, settleEndpoint: false);
+        return true;
     }
 
     // ---- 整备：回手，抽牌（占位消耗时间）----
-    private void DoUsePrep(Character ch)
+    private bool DoUsePrep(Character ch)
     {
         var prep = ch.PrepCard;
-        if (prep is null) return;
+        if (prep is null) return false;
         int cost = prep.Def.Cost;
         int before = ch.Hand.Count;
-        // AdvanceAndSettle → SettleCardEffect 已处理 DrawCards（ch.Draw(Magnitude=2)）
-        // 这里不再重复抽牌，否则会抽两次（共4张）
-        AdvanceAndSettle(ch, cost, settleEndpoint: true, endpointCard: prep, action: null);
+        // 整备效果（抽牌）在占位第一格（指针当前位置）即时触发
+        SettleCardEffect(ch, prep, null);
+        // 推进 cost+1 格（占位 cost 格 + 后一格），沿途触发敌人
+        AdvanceAndSettle(ch, cost + 1, settleEndpoint: false);
         int drawn = ch.Hand.Count - before;
         Events.Add(new GameEvent.PrepUsed(ch.Id, drawn));
+        return true;
     }
 
     // ---- 出牌：占位推进，沿途逐格结算，终点结算牌效果，牌进弃牌堆 ----
-    private void DoPlayCard(Character ch, PlayerAction action)
+    private bool DoPlayCard(Character ch, PlayerAction action)
     {
         var card = ch.Hand.Find(c => c.InstanceId == action.CardInstanceId);
-        if (card is null) return;
+        if (card is null || !HasRequiredTargets(ch, card, action)) return false;
         Events.Add(new GameEvent.CardPlayed(ch.Id, card.InstanceId));
-        int cost = card.Def.Cost;
-        AdvanceAndSettle(ch, cost, settleEndpoint: true, endpointCard: card, action: action);
+        ch.TickVulnerable();   // 出牌=行动：消耗一层易伤
+        // 近战攻击牌：先暴露到前排（位1）再推进指针——沿途触发的敌人打的就会是已暴露的出牌者，
+        // 而非原前排（修复“出牌者暴露前敌人先打到别人”的时序问题）
+        if (card.Def.Effect == EffectKind.AttackDamage && card.Def.DamageType != DamageType.Ranged)
+            MoveToFront(ch);
+        // 牌效果在占位第一格（指针当前位置）即时触发
+        SettleCardEffect(ch, card, action);
+        // 推进 cost+1 格（占位 cost 格 + 后一格），沿途触发敌人
+        AdvanceAndSettle(ch, card.Def.Cost + 1, settleEndpoint: false);
         // 非整备牌打出→进弃牌堆（整备牌由 UsePrep 处理，不走这里）
         ch.Hand.Remove(card);
         ch.DiscardPile.Add(card);
+        return true;
     }
+
+    private bool HasRequiredTargets(Character ch, Card card, PlayerAction action)
+    {
+        var def = card.Def;
+        if (def.NeedsTargetEnemy && !IsAliveEnemy(action.TargetEnemyId)) return false;
+
+        return def.Effect switch
+        {
+            EffectKind.AttackDamage when def.DamageType == DamageType.Ranged => IsAliveEnemy(action.TargetEnemyId),
+            EffectKind.ApplyEnchantment when def.EnchantType == EnchantmentType.Power
+                && def.EnchantScope == EnchantmentScope.SpecificCard => IsOwnedCardTarget(ch, action.TargetCardInstanceId),
+            EffectKind.ApplyEnchantment when def.EnchantType is EnchantmentType.Vulnerable or EnchantmentType.Charge
+                => IsAliveEnemy(action.TargetEnemyId) || IsAliveCharacter(action.TargetCharacterId),
+            EffectKind.ApplyShield when action.TargetCharacterId is int id => IsAliveCharacter(id),
+            _ => true,
+        };
+    }
+
+    private bool IsAliveEnemy(int? id) => id is int eid && Enemies.Any(e => e.Id == eid && e.IsAlive);
+
+    private bool IsAliveCharacter(int? id) => id is int cid && Characters.Any(c => c.Id == cid && c.IsAlive);
+
+    private static bool IsOwnedCardTarget(Character ch, Guid? id) =>
+        id is Guid cid && (ch.Hand.Any(c => c.InstanceId == cid) || ch.DiscardPile.Any(c => c.InstanceId == cid));
 
     /// <summary>
     /// 推进 cost 格，逐格结算：进格→①敌人节点→②护盾检查；
@@ -129,12 +174,15 @@ public sealed class GameState
 
     private void ExecuteEnemyAction(Enemy enemy, EnemyAction act)
     {
+        enemy.TickVulnerable();   // 行动=消耗一层易伤
         switch (act)
         {
             case EnemyAction.Attack atk:
                 int dmg = atk.Amount + enemy.Charge; // 蓄力附带，释放后清零
                 enemy.Charge = 0;
                 int targetPos = atk.TargetPos ?? enemy.TargetPosition;
+                if (targetPos == 2 && Characters.Count(c => c.IsAlive) < 2)
+                    targetPos = 1;
                 Events.Add(new GameEvent.EnemyTriggered(enemy.Id, targetPos, dmg));
                 if (targetPos == -1)
                 {
@@ -177,7 +225,7 @@ public sealed class GameState
         Shields.RemoveAll(s => s.IsExhausted);
 
         int remaining = raw - absorbed;
-        int vuln = target.ConsumeVulnerableBonus();
+        int vuln = target.VulnerableBonus();
         int dmg = remaining + vuln;
         bool wasAlive = target.IsAlive;
         if (dmg > 0)
@@ -227,9 +275,8 @@ public sealed class GameState
     private void DoAttack(Character ch, Card card, PlayerAction? action)
     {
         var dt = card.Def.DamageType;
-        bool ranged = dt == DamageType.Ranged;
-        if (!ranged) MoveToFront(ch); // 近战位移到位1（暴露）；远程不位移
-
+        // 近战位移（MoveToFront）已提前到 DoPlayCard：推进指针前先暴露，
+        // 沿途触发的敌人打的是已暴露的出牌者，而非原前排
         var targets = new List<Enemy>();
         switch (dt)
         {
@@ -260,7 +307,7 @@ public sealed class GameState
     public void DamageEnemy(Enemy enemy, int amount)
     {
         if (!enemy.IsAlive || amount <= 0) return;
-        int dmg = amount + enemy.ConsumeVulnerableBonus();
+        int dmg = amount + enemy.VulnerableBonus();
         enemy.Hp -= dmg;
         Emit(new GameEvent.DamageDealt(enemy.Id, TargetIsEnemy: true, dmg));
         if (!enemy.IsAlive)
@@ -291,13 +338,15 @@ public sealed class GameState
     /// <summary>角色抽 n 张（带种子洗牌）。代码卡可用。</summary>
     public void CharacterDraw(Character c, int n) => c.Draw(n, Rng);
 
-    /// <summary>敌方阵亡收缩：保持敌人位置 1..M 连续（与角色位置对称）。</summary>
+    /// <summary>敌方阵亡收缩：存活敌人向前补位（1..N），末位变封禁；从时间轴移除死亡节点。</summary>
     public void ContractEnemyPositions()
     {
-        var alive = Enemies.Where(e => e.IsAlive).OrderBy(e => e.Position).ToList();
-        for (int i = 0; i < alive.Count; i++) alive[i].Position = i + 1;
-        // 阵亡敌人从时间轴移除（文档：杀掉则其行动节点删除）
-        Timeline.Enemies.RemoveAll(e => !e.IsAlive);
+        var ordered = Enemies
+            .OrderBy(e => e.IsAlive ? 0 : 1)
+            .ThenBy(e => e.Position)
+            .ThenBy(e => e.Id)
+            .ToList();
+        for (int i = 0; i < ordered.Count; i++) ordered[i].Position = i + 1;
     }
 
     // 防御：铺护盾，绑守护关系
@@ -394,13 +443,13 @@ public sealed class GameState
         // 真正离位清盾在角色阵亡收缩时处理）
     }
 
-    /// <summary>阵亡收缩：死人后身后的人向前补位，保持 1..N 连续。</summary>
+    /// <summary>角色阵亡收缩：存活角色向前补位（1..N），末位变封禁；清理护盾关系。</summary>
     public void ContractPositions()
     {
         var alive = Characters.Where(c => c.IsAlive).OrderBy(c => c.Position).ToList();
-        for (int i = 0; i < alive.Count; i++)
-            alive[i].Position = i + 1; // 1..N 连续
-        // 被守护者阵亡→其盾消失
+        var dead = Characters.Where(c => !c.IsAlive).OrderBy(c => c.Position).ThenBy(c => c.Id).ToList();
+        var ordered = alive.Concat(dead).ToList();
+        for (int i = 0; i < ordered.Count; i++) ordered[i].Position = i + 1;
         var deadIds = Characters.Where(c => !c.IsAlive).Select(c => c.Id).ToHashSet();
         Shields.RemoveAll(s => deadIds.Contains(s.ProtectedCharacterId) || deadIds.Contains(s.GuardianCharacterId));
     }

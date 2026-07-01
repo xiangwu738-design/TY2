@@ -14,9 +14,11 @@ public sealed class Enemy
     public int NodeSlot { get; init; }   // 所在时间轴格
     public int Position { get; set; } = 1; // 敌方位置线 1..M（1=前线，与角色位置对称）
     public int Hp { get; set; }
+    public int MaxHp { get; set; }   // 满血上限（= 初始 Hp），供血条按比例显示
     public bool IsAlive => Hp > 0;
     /// <summary>立绘美术占位口（null=占位色块）。规格 §6：美术后填。</summary>
     public string? PortraitArt { get; set; }
+    public string? PortraitSheet { get; set; }
 
     /// <summary>敌人身上的持续状态（如易伤），来自附魔牌。</summary>
     public List<Enchantment> Statuses { get; } = new();
@@ -40,21 +42,27 @@ public sealed class Enemy
         return a;
     }
 
-    /// <summary>易伤加成：受击时额外伤害（消耗一层）。</summary>
-    public int ConsumeVulnerableBonus()
+    /// <summary>易伤加成：受击时额外伤害（仅读取，不消耗——消耗改在行动时由 TickVulnerable 处理）。</summary>
+    public int VulnerableBonus()
     {
         int bonus = 0;
+        foreach (var s in Statuses)
+            if (s.Type == EnchantmentType.Vulnerable) bonus += s.Magnitude;
+        return bonus;
+    }
+
+    /// <summary>行动时消耗一层易伤（敌人每次行动调用）。</summary>
+    public void TickVulnerable()
+    {
         for (int i = Statuses.Count - 1; i >= 0; i--)
         {
             var s = Statuses[i];
             if (s.Type == EnchantmentType.Vulnerable)
             {
-                bonus += s.Magnitude;
                 s.Remaining--;
                 if (s.Remaining <= 0) Statuses.RemoveAt(i);
             }
         }
-        return bonus;
     }
 
     /// <summary>实际伤害（含蓄力）。</summary>
@@ -79,7 +87,10 @@ public sealed class Enemy
             Charge = Charge,
             NodeSlot = NodeSlot,
             Hp = Hp,
+            MaxHp = MaxHp,
             Position = Position,
+            PortraitArt = PortraitArt,
+            PortraitSheet = PortraitSheet,
             ChainIndex = ChainIndex,
         };
         foreach (var a in ActionChain) e.ActionChain.Add(a); // 行动链是 record，不可变，浅拷贝即可

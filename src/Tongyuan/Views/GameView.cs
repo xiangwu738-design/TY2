@@ -40,13 +40,30 @@ public partial class GameView : Control
     private Label? _netLabel;
 
     private Label _topLabel = null!;
-    private HBoxContainer _battleField = null!;
+    private Control _battleViewport = null!;
+    private Control _battleField = null!;
     private HBoxContainer _timelineRow = null!;
     private Label _activeLabel = null!;
     private Control _handRow = null!;
     private HBoxContainer _actionRow = null!;
     private RichTextLabel _log = null!;
     private MarginContainer? _margin;
+    private Control _shakeRoot = null!;
+    private TextureRect _bgLayer = null!;
+    private Control _fgOffset = null!;
+    private Control _midBattleWrap = null!;
+    private Control _battleDmgLayer = null!;
+    private Control _frontLayer = null!;
+    private Vector2 _battleWrapBasePos;
+    private Vector2 _parallax;
+    private bool _parallaxArmed;
+    private const float ParallaxBgAmp = 10f;
+    private const float ParallaxBattleAmp = 18f;
+    private const float ParallaxFrontAmp = 28f;
+    private const float ParallaxSmooth = 8f;
+    private const float BattleGap = 16f;
+    private const float BattleFieldHeight = 278f;
+    private const float BattleSidePadding = 24f;
     private VBoxContainer _sidebar = null!;
     private Button _sidebarToggle = null!;
     private bool _sidebarOpen;
@@ -68,11 +85,24 @@ public partial class GameView : Control
         _viewSize = size;
         Size = size;
         Position = Vector2.Zero;
+        if (_shakeRoot is not null && IsInstanceValid(_shakeRoot))
+        {
+            _shakeRoot.Position = Vector2.Zero;
+            _shakeRoot.Size = size;
+        }
         if (_margin is not null)
         {
             _margin.Position = Vector2.Zero;
             _margin.Size = size;
         }
+        if (_bgLayer is not null && IsInstanceValid(_bgLayer)) LayoutParallaxLayer(_bgLayer, ParallaxBgAmp);
+        if (_fgOffset is not null && IsInstanceValid(_fgOffset))
+        {
+            _fgOffset.Size = size;
+            _fgOffset.Position = Vector2.Zero;
+        }
+        if (State is not null && _battleViewport is not null && IsInstanceValid(_battleViewport) && _battleField is not null && IsInstanceValid(_battleField))
+            RenderBattleField();
     }
     private Vector2 _viewSize = new(1920, 1080);
 
@@ -83,10 +113,20 @@ public partial class GameView : Control
         margin.SetAnchorsPreset(LayoutPreset.FullRect);
         margin.AddThemeConstantOverride("margin_left", 10);
         margin.AddThemeConstantOverride("margin_right", 10);
-        margin.AddThemeConstantOverride("margin_top", 24);   // 整体下移
+        margin.AddThemeConstantOverride("margin_top", 48);   // 整体下移
         margin.AddThemeConstantOverride("margin_bottom", 8);
         _margin = margin;
-        AddChild(margin);
+        _shakeRoot = new Control();
+        _shakeRoot.Size = _viewSize;
+        _shakeRoot.AddChild(margin);
+
+        _bgLayer = MakeBackgroundLayer();
+        AddChild(_bgLayer);
+
+        _fgOffset = new Control { Size = _viewSize };
+        _fgOffset.Position = Vector2.Zero;
+        _fgOffset.AddChild(_shakeRoot);
+        AddChild(_fgOffset);
 
         var scroll = new ScrollContainer
         {
@@ -157,15 +197,21 @@ public partial class GameView : Control
 
         // 战场（居中：左右各加弹性间距，角色组和敌人组聚拢在可用区中央）
         vb.AddChild(SectionLabel("战场（左=后排 ··· 前线⚔敌人 | 点头像切换当前角色）"));
-        var battleWrapper = new HBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        var bLeft = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        battleWrapper.AddChild(bLeft);
-        _battleField = new HBoxContainer();
-        _battleField.AddThemeConstantOverride("separation", 10);
-        battleWrapper.AddChild(_battleField);
-        var bRight = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        battleWrapper.AddChild(bRight);
-        vb.AddChild(battleWrapper);
+        _battleViewport = new Control
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 318),
+            ClipContents = false,
+        };
+        _midBattleWrap = new Control();
+        _battleField = new Control();
+        _midBattleWrap.AddChild(_battleField);
+        _battleDmgLayer = new Control { MouseFilter = MouseFilterEnum.Ignore };
+        _midBattleWrap.AddChild(_battleDmgLayer);
+        _frontLayer = MakeBattleForegroundLayer();
+        _midBattleWrap.AddChild(_frontLayer);
+        _battleViewport.AddChild(_midBattleWrap);
+        vb.AddChild(_battleViewport);
 
         // 时间轴
         vb.AddChild(SectionLabel("时间轴 / 行动条（▶ 当前指针；彩=将推进·各角色色，红⚠=将触发）"));
@@ -184,7 +230,7 @@ public partial class GameView : Control
         _activeLabel = new Label { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _activeLabel.AddThemeFontSizeOverride("font_size", 14);
         vb.AddChild(_activeLabel);
-        _handRow = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 300) };
+        _handRow = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 392) };
         vb.AddChild(_handRow);
         _actionRow = new HBoxContainer();
         _actionRow.AddThemeConstantOverride("separation", 6);
@@ -197,7 +243,7 @@ public partial class GameView : Control
         // FX 层：伤害飘字等悬浮特效（置顶、不挡鼠标、跨 Render 持久）
         _fxLayer = new Control { MouseFilter = MouseFilterEnum.Ignore };
         _fxLayer.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(_fxLayer);
+        _fgOffset.AddChild(_fxLayer);
 
         // 指针光点（文档 §七：指针逐格平滑滑动）——持久节点，出牌后 Tween 到当前格
         _pointerGlow = new ColorRect { CustomMinimumSize = new Vector2(10, 10), Color = UiPalette.PointerGold, ZIndex = 90, MouseFilter = MouseFilterEnum.Ignore };
@@ -212,6 +258,123 @@ public partial class GameView : Control
     private Control? _detailPopup;
     private Control? _detailOverlay;
     private float _pendingTimelineShift;
+
+    private TextureRect MakeBackgroundLayer()
+    {
+        var rect = new TextureRect
+        {
+            MouseFilter = MouseFilterEnum.Ignore,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.Scale,
+        };
+        var tex = GD.Load<Texture2D>("res://art/bg_battle.png");
+        if (tex is not null)
+        {
+            rect.Texture = tex;
+        }
+        else
+        {
+            var grad = new Gradient();
+            grad.SetColor(0, new Color(0.05f, 0.06f, 0.09f));
+            grad.SetColor(1, new Color(0.13f, 0.15f, 0.19f));
+            rect.Texture = new GradientTexture2D
+            {
+                Gradient = grad,
+                Fill = GradientTexture2D.FillEnum.Linear,
+                FillFrom = new Vector2(0.5f, 0f),
+                FillTo = new Vector2(0.5f, 1f),
+            };
+        }
+        LayoutParallaxLayer(rect, ParallaxBgAmp);
+        return rect;
+    }
+
+    private static Control MakeBattleForegroundLayer()
+    {
+        return new BattleForegroundLayer
+        {
+            MouseFilter = MouseFilterEnum.Ignore,
+            ZIndex = 30,
+        };
+    }
+
+    private sealed partial class BattleForegroundLayer : Control
+    {
+        public override void _Draw()
+        {
+            var w = Size.X;
+            var h = Size.Y;
+            if (w <= 0f || h <= 0f) return;
+
+            var near = new Color(0.03f, 0.035f, 0.055f, 0.38f);
+            var ridge = new[]
+            {
+                new Vector2(-80f, h),
+                new Vector2(0f, h - 22f),
+                new Vector2(w * 0.16f, h - 34f),
+                new Vector2(w * 0.28f, h - 14f),
+                new Vector2(w * 0.45f, h - 28f),
+                new Vector2(w * 0.58f, h - 10f),
+                new Vector2(w * 0.76f, h - 32f),
+                new Vector2(w + 80f, h - 18f),
+                new Vector2(w + 80f, h + 80f),
+                new Vector2(-80f, h + 80f),
+            };
+            DrawColoredPolygon(ridge, near);
+
+            var lip = new Color(0.75f, 0.82f, 1f, 0.08f);
+            DrawLine(new Vector2(0f, h - 30f), new Vector2(w, h - 22f), lip, 2f);
+        }
+    }
+
+    private void LayoutParallaxLayer(Control layer, float amp)
+    {
+        layer.Size = _viewSize + new Vector2(amp * 2f, amp * 2f);
+        layer.Position = new Vector2(-amp, -amp);
+    }
+
+    public override void _Process(double delta)
+    {
+        var vp = GetViewport();
+        if (vp is null) return;
+        var size = GetViewportRect().Size;
+        if (size.X <= 0f || size.Y <= 0f) return;
+
+        var target = Vector2.Zero;
+        if (_parallaxArmed)
+        {
+            var mouse = vp.GetMousePosition();
+            target = new Vector2(
+                Mathf.Clamp((mouse.X / size.X - 0.5f) * 2f, -1f, 1f),
+                Mathf.Clamp((mouse.Y / size.Y - 0.5f) * 2f, -1f, 1f));
+        }
+
+        float k = 1f - Mathf.Exp(-(float)delta * ParallaxSmooth);
+        _parallax = _parallax.Lerp(target, k);
+
+        if (IsInstanceValid(_bgLayer))
+            _bgLayer.Position = new Vector2(-ParallaxBgAmp, -ParallaxBgAmp) - _parallax * ParallaxBgAmp;
+
+        if (IsInstanceValid(_fgOffset))
+            _fgOffset.Position = Vector2.Zero;
+        if (IsInstanceValid(_midBattleWrap))
+            _midBattleWrap.Position = _battleWrapBasePos;
+
+        if (IsInstanceValid(_battleField) && IsInstanceValid(_midBattleWrap))
+        {
+            var battleOffset = -_parallax * ParallaxBattleAmp;
+            _battleField.Position = battleOffset;
+            if (IsInstanceValid(_battleDmgLayer)) _battleDmgLayer.Position = battleOffset;
+        }
+
+        if (IsInstanceValid(_frontLayer))
+            _frontLayer.Position = -_parallax * ParallaxFrontAmp;
+    }
+
+    public override void _Input(InputEvent e)
+    {
+        if (e is InputEventMouseMotion) _parallaxArmed = true;
+    }
 
     private static Label SectionLabel(string text)
     {
@@ -264,18 +427,64 @@ public partial class GameView : Control
         ClearChildren(_battleField);
         _charPortraits.Clear();
         _enemyPortraits.Clear();
+        float x = 0f;
+
         var alive = State!.AliveCharacters.OrderByDescending(c => c.Position).ToList();
         foreach (var c in alive)
-            _battleField.AddChild(MakePortrait(c, c.Id == _activeId));
-        var gap1 = new Control { CustomMinimumSize = new Vector2(24, 0) };
-        _battleField.AddChild(gap1);
-        var arrow = new Label { Text = "⚔", VerticalAlignment = VerticalAlignment.Center };
-        arrow.AddThemeFontSizeOverride("font_size", 22);
-        _battleField.AddChild(arrow);
-        var gap2 = new Control { CustomMinimumSize = new Vector2(24, 0) };
-        _battleField.AddChild(gap2);
+            AddBattleChild(MakePortrait(c, c.Id == _activeId), ref x);
+
+        AddBattleChild(new Control { CustomMinimumSize = new Vector2(82, BattleFieldHeight) }, ref x);
+        var arrow = new Label { Text = "◆", VerticalAlignment = VerticalAlignment.Center };
+        arrow.AddThemeFontSizeOverride("font_size", 20);
+        arrow.CustomMinimumSize = new Vector2(32, BattleFieldHeight);
+        AddBattleChild(arrow, ref x);
+        AddBattleChild(new Control { CustomMinimumSize = new Vector2(82, BattleFieldHeight) }, ref x);
+
         foreach (var e in State.Enemies.Where(e => e.IsAlive).OrderBy(e => e.Position))
-            _battleField.AddChild(MakeEnemyBlock(e, _targetMode == TargetMode.Enemy));
+            AddBattleChild(MakeEnemyBlock(e, _targetMode == TargetMode.Enemy), ref x);
+
+        var battleSize = new Vector2(MathF.Max(0f, x - BattleGap), BattleFieldHeight);
+        _battleField.Size = battleSize;
+        if (_battleDmgLayer.Size != battleSize) _battleDmgLayer.Size = battleSize;
+        if (_frontLayer.Size != battleSize)
+        {
+            _frontLayer.Size = battleSize;
+            _frontLayer.QueueRedraw();
+        }
+
+        float available = MathF.Max(320f, _viewSize.X - BattleSidePadding * 2f);
+        float scale = battleSize.X > available ? available / battleSize.X : 1f;
+        var scaledSize = battleSize * scale;
+        _battleField.Scale = new Vector2(scale, scale);
+        _battleDmgLayer.Scale = new Vector2(scale, scale);
+        _frontLayer.Scale = new Vector2(scale, scale);
+        _midBattleWrap.CustomMinimumSize = scaledSize;
+        _midBattleWrap.Size = scaledSize;
+
+        float viewportW = _battleViewport.Size.X > 1f
+            ? _battleViewport.Size.X
+            : MathF.Max(320f, _viewSize.X - 20f);
+        float viewportH = _battleViewport.Size.Y > 1f
+            ? _battleViewport.Size.Y
+            : 318f;
+        _battleWrapBasePos = new Vector2(
+            MathF.Round((viewportW - scaledSize.X) * 0.5f),
+            MathF.Round((viewportH - scaledSize.Y) * 0.5f));
+        _midBattleWrap.Position = _battleWrapBasePos;
+    }
+
+    private void AddBattleChild(Control child, ref float x)
+    {
+        var min = child.CustomMinimumSize;
+        if (child is PortraitView) min = PortraitView.SlotSize;
+        if (min.X <= 0f) min.X = child.GetCombinedMinimumSize().X;
+        if (min.X <= 0f) min.X = 32f;
+        if (min.Y <= 0f) min.Y = BattleFieldHeight;
+        child.CustomMinimumSize = min;
+        child.Position = new Vector2(x, 0f);
+        child.Size = new Vector2(min.X, min.Y);
+        _battleField.AddChild(child);
+        x += min.X + BattleGap;
     }
 
     private Control MakePortrait(Character c, bool isActive)
@@ -378,17 +587,23 @@ public partial class GameView : Control
         var p = new Panel { CustomMinimumSize = new Vector2(isPast ? 50 : 68, 96) };
         if (isPtr) p.Name = "__ptr_cell__";
         var sb = new StyleBoxFlat();
-        sb.SetCornerRadiusAll(4);
+        sb.SetCornerRadiusAll(1);
         Color bg = isPast ? new Color(0.08f, 0.08f, 0.10f)
                   : trav.Contains(cell) ? previewColor
-                  : hasEnemy ? new Color(0.28f, 0.12f, 0.10f)
-                  : isPtr ? new Color(0.22f, 0.22f, 0.35f)
-                  : new Color(0.12f, 0.12f, 0.15f);
+                  : hasEnemy ? new Color(0.28f, 0.10f, 0.09f, 0.72f)
+                  : isPtr ? new Color(0.16f, 0.18f, 0.28f, 0.82f)
+                  : new Color(0.08f, 0.10f, 0.14f, 0.72f);
         sb.BgColor = bg;
         if (isPtr)
-        { sb.BorderColor = new Color(1f, 0.85f, 0.2f); sb.SetBorderWidthAll(3); }   // 黄框：当前格
+        { sb.BorderColor = UiPalette.GoldBorder; sb.SetBorderWidthAll(2); }   // 黄框：当前格
         else if (hasEnemy && !isPast)
-        { sb.BorderColor = enemies.Count > 1 ? new Color(1f, 0.55f, 0.2f) : new Color(0.9f, 0.28f, 0.28f); sb.SetBorderWidthAll(2); }
+        { sb.BorderColor = enemies.Count > 1 ? UiPalette.VulnGold : UiPalette.EnemyRed.Lightened(0.28f); sb.SetBorderWidthAll(1); }
+        else
+        { sb.BorderColor = new Color(0.45f, 0.50f, 0.60f, isPast ? 0.12f : 0.24f); sb.SetBorderWidthAll(1); }
+        sb.ContentMarginLeft = 5;
+        sb.ContentMarginRight = 5;
+        sb.ContentMarginTop = 4;
+        sb.ContentMarginBottom = 4;
         p.AddThemeStyleboxOverride("panel", sb);
 
         var vb = new VBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -1018,30 +1233,26 @@ public partial class GameView : Control
             foreach (var (view, amount, enemy) in dmgList)
             {
                 if (!IsInstanceValid(view)) continue;
-                // 用 Control.GlobalPosition（UI 坐标系）+ 立绘中心偏移，避免 Node2D 坐标系歧义
-                // PortraitView: W=140, PortraitCx=70, 飘字出现在立绘上半部分
-                var center = view.GlobalPosition + new Vector2(70f, 28f);
+                var center = view.Position + new Vector2(70f, 28f);
                 SpawnDamageNumber(center, amount, enemy);
             }
         };
     }
 
-    /// <summary>屏震（受击→屏震）：_margin 短促抖动后归零。</summary>
+    /// <summary>屏震：只抖动无 anchor 的 _shakeRoot，避免 Layout 在短时间内把整块 UI 拉偏。</summary>
     private void Shake()
     {
-        if (_margin is null) return;
-        // Kill 旧 tween：多次受击同时跑多个 tween 互相干扰，会卡在 (5,-2) 等中间值导致内容永久右移
+        if (!IsInstanceValid(_shakeRoot)) return;
         _shakeTween?.Kill();
-        _margin.Position = Vector2.Zero; // 每次震动始终从零出发，防止累计漂移
+        _shakeRoot.Position = Vector2.Zero;
         _shakeTween = CreateTween();
-        _shakeTween.TweenProperty(_margin, "position", new Vector2(-5, 2), 0.04f);
-        _shakeTween.TweenProperty(_margin, "position", new Vector2(5, -2), 0.04f);
-        _shakeTween.TweenProperty(_margin, "position", new Vector2(-3, 1), 0.04f);
-        _shakeTween.TweenProperty(_margin, "position", Vector2.Zero, 0.05f);
-        // 额外回调兜底：即使 tween 被外力打断也保证归零
+        _shakeTween.TweenProperty(_shakeRoot, "position", new Vector2(-5, 2), 0.04f);
+        _shakeTween.TweenProperty(_shakeRoot, "position", new Vector2(5, -2), 0.04f);
+        _shakeTween.TweenProperty(_shakeRoot, "position", new Vector2(-3, 1), 0.04f);
+        _shakeTween.TweenProperty(_shakeRoot, "position", Vector2.Zero, 0.05f);
         _shakeTween.TweenCallback(Callable.From(() =>
         {
-            if (_margin is not null && IsInstanceValid(_margin)) _margin.Position = Vector2.Zero;
+            if (IsInstanceValid(_shakeRoot)) _shakeRoot.Position = Vector2.Zero;
         }));
     }
 
@@ -1064,7 +1275,7 @@ public partial class GameView : Control
         label.AddThemeFontSizeOverride("font_size", fs);
         label.AddThemeColorOverride("font_color",
             heal ? UiPalette.ShieldTeal : (targetIsEnemy ? UiPalette.VulnGold : UiPalette.WarnOrange));
-        _fxLayer.AddChild(label);
+        _battleDmgLayer.AddChild(label);
         var tw = CreateTween();
         tw.TweenProperty(label, "position:y", label.Position.Y - 52f, 0.6f)
           .SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);

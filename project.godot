@@ -13,20 +13,21 @@ config_version=5
 config/name="同渊 Kernel MVP"
 config/description="《同渊》内核验证 MVP：时间轴 / 占位 / 逐格结算 / 位置系统 / 完全信息预读"
 run/main_scene="res://main.tscn"
-config/features=PackedStringArray("4.7", "GL Compatibility")
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 
 [display]
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
+window/size/initial_position_type=1
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+
+[dotnet]
+
+project/assembly_name="Tongyuan"
 
 [rendering]
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-
-[dotnet]
-
-project/assembly_name="Tongyuan"

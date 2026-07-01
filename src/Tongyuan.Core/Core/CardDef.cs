@@ -17,6 +17,21 @@ public enum Rarity
     Rare,
 }
 
+public enum CardAnimation
+{
+    Auto,
+    Wait,
+    Chant,
+    Guard,
+    Damage,
+    Thrust,
+    Swing,
+    Missile,
+    Skill,
+    Spell,
+    Item,
+}
+
 /// <summary>
 /// 卡牌定义（静态模板）。具体数值/卡牌内容用模板占位，登记 §7，由用户后填（规格 §6）。
 /// </summary>
@@ -49,6 +64,8 @@ public sealed class CardDef
 
     /// <summary>稀有度（卡框边色）。默认 Common。</summary>
     public Rarity Rarity { get; set; } = Rarity.Common;
+
+    public CardAnimation Animation { get; set; } = CardAnimation.Auto;
 
     /// <summary>展示用描述（空则自动生成）。避免“描述模糊”。</summary>
     public string Description { get; set; } = string.Empty;

@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using System.Linq;
 using Tongyuan.Core.Core;
 using Tongyuan.Core.Data;
@@ -20,6 +21,7 @@ public partial class Main : Control
     private RunController? _run;
     private Control? _devPanel;
     private bool _devVisible;
+    private bool _windowCentered;
     private PackedScene? _battleScene;
 
     public override void _Ready()
@@ -31,6 +33,24 @@ public partial class Main : Control
         ShowMenu();
         GetViewport().Connect("size_changed", Callable.From(ResizeView));
         ResizeView();
+        CallDeferred(MethodName.CenterWindowOnScreen);
+    }
+
+    private void CenterWindowOnScreen()
+    {
+        if (_windowCentered) return;
+        _windowCentered = true;
+        if (DisplayServer.GetName() == "headless") return;
+
+        int screen = DisplayServer.WindowGetCurrentScreen();
+        Rect2I usable = DisplayServer.ScreenGetUsableRect(screen);
+        Vector2I windowSize = DisplayServer.WindowGetSize();
+        if (usable.Size.X <= 0 || usable.Size.Y <= 0 || windowSize.X <= 0 || windowSize.Y <= 0) return;
+
+        var pos = new Vector2I(
+            usable.Position.X + Math.Max(0, (usable.Size.X - windowSize.X) / 2),
+            usable.Position.Y + Math.Max(0, (usable.Size.Y - windowSize.Y) / 2));
+        DisplayServer.WindowSetPosition(pos);
     }
 
     private enum LanIntent { None, Host, Join }
@@ -184,11 +204,11 @@ public partial class Main : Control
     {
         var tl = new Timeline();
         for (int i = 0; i < 6; i++) tl.Nodes.Add(NodeType.Empty);
-        var slash = new Enemy { Id = 1, Name = "斩击兵", Kind = EnemyKind.Slash, Power = 5, NodeSlot = 2, Hp = 20 };
+        var slash = new Enemy { Id = 1, Name = "斩击兵", Kind = EnemyKind.Slash, Power = 5, NodeSlot = 2, Hp = 20, MaxHp = 20, PortraitSheet = "res://art/rmmz_enemy_sheets/enemy_slash_sheet.png" };
         slash.ActionChain.AddRange(new EnemyAction[] { new EnemyAction.Attack(5, 1) });
-        var thrust = new Enemy { Id = 2, Name = "突刺兵", Kind = EnemyKind.Thrust, Power = 4, NodeSlot = 4, Hp = 18 };
+        var thrust = new Enemy { Id = 2, Name = "突刺兵", Kind = EnemyKind.Thrust, Power = 4, NodeSlot = 4, Hp = 18, MaxHp = 18, PortraitSheet = "res://art/rmmz_enemy_sheets/enemy_thrust_sheet.png" };
         thrust.ActionChain.AddRange(new EnemyAction[] { new EnemyAction.Charge(2), new EnemyAction.Attack(4, 2), new EnemyAction.Idle() });
-        var striker = new Enemy { Id = 3, Name = "重锤兵", Kind = EnemyKind.Strike, Power = 3, NodeSlot = 5, Hp = 26 };
+        var striker = new Enemy { Id = 3, Name = "重锤兵", Kind = EnemyKind.Strike, Power = 3, NodeSlot = 5, Hp = 26, MaxHp = 26, PortraitSheet = "res://art/rmmz_enemy_sheets/enemy_strike_sheet.png" };
         striker.ActionChain.AddRange(new EnemyAction[] { new EnemyAction.Charge(3), new EnemyAction.Attack(3, -1) });
         tl.Enemies.Add(slash); tl.Enemies.Add(thrust); tl.Enemies.Add(striker);
         slash.Position = 1; thrust.Position = 2; striker.Position = 3;
